@@ -1,0 +1,17 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: cosmos
+    name: Contract
+    network: cosmoshub-4
+    source:
+      startBlock: 0
+    mapping:
+      apiVersion: 0.0.5
+      language: wasm/assemblyscript
+      entities:
+        - ExampleEntity
+      blockHandlers:
+        - handler: handleBlock
+      file: ./src/contract.ts
