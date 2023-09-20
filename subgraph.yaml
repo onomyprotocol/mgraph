@@ -3,15 +3,15 @@ schema:
   file: ./schema.graphql
 dataSources:
   - kind: cosmos
-    name: Contract
-    network: cosmoshub-4
+    name: Market
+    network: market
     source:
-      startBlock: 0
+      startBlock: 1
     mapping:
-      apiVersion: 0.0.5
+      apiVersion: 0.0.7
       language: wasm/assemblyscript
       entities:
-        - ExampleEntity
-      blockHandlers:
-        - handler: handleBlock
-      file: ./src/contract.ts
+        - Organization
+      transactionHandlers:
+        - handler: handleTx
+      file: ./src/mapping.ts

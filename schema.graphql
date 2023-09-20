@@ -1,5 +1,6 @@
-type ExampleEntity @entity {
+type Organization @entity {
   id: ID!
-  block: Bytes!
-  count: BigInt!
+  creator: String
+  name: String
+  description: String
 }
