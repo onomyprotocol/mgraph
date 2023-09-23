@@ -1,6 +1,6 @@
 specVersion: 0.0.5
 schema:
-  file: ./schema.graphql
+  file: schema.graphql
 dataSources:
   - kind: cosmos
     name: Market
@@ -14,4 +14,4 @@ dataSources:
         - Execution
       transactionHandlers:
         - handler: handleExecution
-      file: ./src/mapping.ts
+      file: Market/Market.wasm
