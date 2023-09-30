@@ -1,5 +1,5 @@
 {
-  "name": "marketgraph",
+  "name": "mgraph",
   "license": "UNLICENSED",
   "scripts": {
     "codegen": "graph codegen",
