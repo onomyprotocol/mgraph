@@ -1,9 +1,38 @@
-type Execution @entity {
+type Order @entity {
   id: ID!
-	time: String
-	type: String
-  denomAsk: String
-  denomBid: String
-  amountAsk: String
-  amountBid: String
+	owner: String!
+	status: String!
+	orderType: String!
+	denomAsk: String! 
+  denomBid: String!
+  amount: BigInt!
+	rate: BigDecimal!
+	begTime: BigInt!
+	updTime: BigInt!
+}
+
+enum HistoricalFrameType {
+  Minute
+  FiveMinute
+  QuarterHour
+  Hour
+  QuarterDay
+  Day
+  Week
+}
+
+type HistoricalFrame @entity {
+  id: ID!
+  type: HistoricalFrameType!
+	base: String!
+	quote: String!
+  updateTime: BigInt!
+  startTime: BigInt!
+  startPrice: BigDecimal!
+  endTime: BigInt!
+  endPrice: BigDecimal!
+  minPrice: BigDecimal!
+  maxPrice: BigDecimal!
+	volume: BigInt!
+  transactionsCount: BigInt!
 }
