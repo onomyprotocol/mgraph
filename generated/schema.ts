@@ -365,3 +365,189 @@ export class HistoricalFrame extends Entity {
     this.set("transactionsCount", Value.fromBigInt(value));
   }
 }
+
+export class BookIncrement extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save BookIncrement entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type BookIncrement must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
+      );
+      store.set("BookIncrement", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): BookIncrement | null {
+    return changetype<BookIncrement | null>(
+      store.get_in_block("BookIncrement", id)
+    );
+  }
+
+  static load(id: string): BookIncrement | null {
+    return changetype<BookIncrement | null>(store.get("BookIncrement", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get bin(): string {
+    let value = this.get("bin");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set bin(value: string) {
+    this.set("bin", Value.fromString(value));
+  }
+
+  get amount(): BigInt {
+    let value = this.get("amount");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set amount(value: BigInt) {
+    this.set("amount", Value.fromBigInt(value));
+  }
+}
+
+export class OrderBook extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save OrderBook entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type OrderBook must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
+      );
+      store.set("OrderBook", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): OrderBook | null {
+    return changetype<OrderBook | null>(store.get_in_block("OrderBook", id));
+  }
+
+  static load(id: string): OrderBook | null {
+    return changetype<OrderBook | null>(store.get("OrderBook", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get base(): string {
+    let value = this.get("base");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set base(value: string) {
+    this.set("base", Value.fromString(value));
+  }
+
+  get quote(): string {
+    let value = this.get("quote");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set quote(value: string) {
+    this.set("quote", Value.fromString(value));
+  }
+
+  get type(): string {
+    let value = this.get("type");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set type(value: string) {
+    this.set("type", Value.fromString(value));
+  }
+
+  get book(): Array<string> {
+    let value = this.get("book");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toStringArray();
+    }
+  }
+
+  set book(value: Array<string>) {
+    this.set("book", Value.fromStringArray(value));
+  }
+
+  get max(): string {
+    let value = this.get("max");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set max(value: string) {
+    this.set("max", Value.fromString(value));
+  }
+
+  get min(): string {
+    let value = this.get("min");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set min(value: string) {
+    this.set("min", Value.fromString(value));
+  }
+}
