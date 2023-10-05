@@ -43,12 +43,22 @@ type BookIncrement @entity {
   amount: BigInt!
 }
 
-type OrderBook @entity {
+type BookBin @entity {
   id: ID! 
 	base: String!
 	quote: String!
 	type: String!
   book: [ID!]!
-	max: String!
-	min: String!
 }
+
+type OrderBook @entity {
+	id: ID!
+	base: String!
+	quote: String!
+  direction: String!
+	total: BigInt!
+	max: String!
+  ceiling: String!
+	bins: [String!]!
+}
+

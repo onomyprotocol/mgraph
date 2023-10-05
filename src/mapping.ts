@@ -1,9 +1,8 @@
 import { cosmos } from "@graphprotocol/graph-ts";
-import { Order, HistoricalFrame, OrderBook, BookIncrement } from "../generated/schema";
+import { Order, HistoricalFrame, BookBin, BookIncrement, OrderBook } from "../generated/schema";
 import {BigInt, BigDecimal, store} from "@graphprotocol/graph-ts";
 import {Frame, FrameType} from "./Frame";
-import { Book, BookType, Increment } from "./Book"
-import {sigFigs} from "./utils";
+import {sigFigs, join, placeCeiling} from "./utils";
 
 export function handleOrder(data: cosmos.EventData): void {
 	let order = Order.load(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`)
@@ -39,38 +38,63 @@ export function handleOrder(data: cosmos.EventData): void {
 
 // Add liquidity to books
 function addLiquidity(order: Order, data: cosmos.EventData): void {
-	// We can start this as low as needed
-	var placeCeiling = BigDecimal.fromString(".000000001")
-
-	// We do this to find the place of this order
-	while (placeCeiling.lt(order.rate)) {
-		placeCeiling.times(BigDecimal.fromString("10"))
+	
+	// First pull order book
+	let base = order.denomBid
+	let quote = order.denomAsk
+	let direction = "sell"
+	let orderBookId = join([base, quote, direction])
+	
+	let book = OrderBook.load(orderBookId)
+	if (book == null) {
+		book = new OrderBook(orderBookId)
+		book.base = base
+		book.quote = quote
+		book.direction = direction
+		book.total = order.amount
+		book.max = order.rate.toString()
+		book.ceiling = placeCeiling(order.rate).toString()
+		book.save()
 	}
 
-	let place = placeCeiling.div(BigDecimal.fromString("10"))
+	var binId: string
+	var bin: BookBin | null
+	var incrementId: string
+	var increment: BookIncrement | null
 
-	// We do this to find the place of the max order in the books
-	book = new Book(order.denomBid, order.denomAsk, place.toString())
-	id = book.getID();
-	let bookEntity = OrderBook.load(id)
-	if (bookEntity != null) {
-		placeCeiling = BigDecimal.fromString(".000000001")
-		while (placeCeiling.lt(BigDecimal.fromString(bookEntity.max))) {
-			placeCeiling.times(BigDecimal.fromString("10"))
+	if (order.rate.gt(BigDecimal.fromString(book.max))) {
+		book.max = order.rate.toString()
+		let orderCeiling = placeCeiling(order.rate)
+		if (orderCeiling.gt(BigDecimal.fromString(book.ceiling))) {
+			// Add books until placeCeiling
+			// Do not worry about adding in order volumes
+			let bookCeiling = BigDecimal.fromString(book.ceiling)
+			let place = bookCeiling
+			
+			while (bookCeiling.lt(orderCeiling)) {	
+				binId = join([base, quote, direction, place.toString()])
+				bin = new BookBin(binId)
+				incrementId = join([base, quote, direction, place.toString(), "0"])
+				increment = new BookIncrement(incrementId)
+
+				bookCeiling = bookCeiling.times(BigDecimal.fromString("10"))
+			}
 		}
+		book.save()
 	}
 
-	place = placeCeiling.div(BigDecimal.fromString("10"))
+	let place = BigDecimal.fromString(book.ceiling).div(BigDecimal.fromString("10"))
 
 	var sigPrice: number
-	var book: Book
+	// var bin: BookBin | null
+
 	var id: string
 	// Six bins
 	for (let i = 0; i < 6; i++) {
 		sigPrice = sigFigs(parseFloat(order.rate.toString()), i+1)
 
-		book = new Book(order.denomBid, order.denomAsk, place.toString())
-		id = book.getID();
+		binId =  join([base, quote, direction, place.toString()])
+		bin = BookBin.load(binId)
 		bookEntity = OrderBook.load(id)
 		if (bookEntity== null) {
 			bookEntity = new OrderBook(id)

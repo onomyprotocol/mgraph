@@ -434,7 +434,7 @@ export class BookIncrement extends Entity {
   }
 }
 
-export class OrderBook extends Entity {
+export class BookBin extends Entity {
   constructor(id: string) {
     super();
     this.set("id", Value.fromString(id));
@@ -442,22 +442,22 @@ export class OrderBook extends Entity {
 
   save(): void {
     let id = this.get("id");
-    assert(id != null, "Cannot save OrderBook entity without an ID");
+    assert(id != null, "Cannot save BookBin entity without an ID");
     if (id) {
       assert(
         id.kind == ValueKind.STRING,
-        `Entities of type OrderBook must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
+        `Entities of type BookBin must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
       );
-      store.set("OrderBook", id.toString(), this);
+      store.set("BookBin", id.toString(), this);
     }
   }
 
-  static loadInBlock(id: string): OrderBook | null {
-    return changetype<OrderBook | null>(store.get_in_block("OrderBook", id));
+  static loadInBlock(id: string): BookBin | null {
+    return changetype<BookBin | null>(store.get_in_block("BookBin", id));
   }
 
-  static load(id: string): OrderBook | null {
-    return changetype<OrderBook | null>(store.get("OrderBook", id));
+  static load(id: string): BookBin | null {
+    return changetype<BookBin | null>(store.get("BookBin", id));
   }
 
   get id(): string {
@@ -524,6 +524,98 @@ export class OrderBook extends Entity {
   set book(value: Array<string>) {
     this.set("book", Value.fromStringArray(value));
   }
+}
+
+export class OrderBook extends Entity {
+  constructor(id: string) {
+    super();
+    this.set("id", Value.fromString(id));
+  }
+
+  save(): void {
+    let id = this.get("id");
+    assert(id != null, "Cannot save OrderBook entity without an ID");
+    if (id) {
+      assert(
+        id.kind == ValueKind.STRING,
+        `Entities of type OrderBook must have an ID of type String but the id '${id.displayData()}' is of type ${id.displayKind()}`
+      );
+      store.set("OrderBook", id.toString(), this);
+    }
+  }
+
+  static loadInBlock(id: string): OrderBook | null {
+    return changetype<OrderBook | null>(store.get_in_block("OrderBook", id));
+  }
+
+  static load(id: string): OrderBook | null {
+    return changetype<OrderBook | null>(store.get("OrderBook", id));
+  }
+
+  get id(): string {
+    let value = this.get("id");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set id(value: string) {
+    this.set("id", Value.fromString(value));
+  }
+
+  get base(): string {
+    let value = this.get("base");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set base(value: string) {
+    this.set("base", Value.fromString(value));
+  }
+
+  get quote(): string {
+    let value = this.get("quote");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set quote(value: string) {
+    this.set("quote", Value.fromString(value));
+  }
+
+  get direction(): string {
+    let value = this.get("direction");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set direction(value: string) {
+    this.set("direction", Value.fromString(value));
+  }
+
+  get total(): BigInt {
+    let value = this.get("total");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set total(value: BigInt) {
+    this.set("total", Value.fromBigInt(value));
+  }
 
   get max(): string {
     let value = this.get("max");
@@ -538,8 +630,8 @@ export class OrderBook extends Entity {
     this.set("max", Value.fromString(value));
   }
 
-  get min(): string {
-    let value = this.get("min");
+  get ceiling(): string {
+    let value = this.get("ceiling");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -547,7 +639,20 @@ export class OrderBook extends Entity {
     }
   }
 
-  set min(value: string) {
-    this.set("min", Value.fromString(value));
+  set ceiling(value: string) {
+    this.set("ceiling", Value.fromString(value));
+  }
+
+  get bins(): Array<string> {
+    let value = this.get("bins");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toStringArray();
+    }
+  }
+
+  set bins(value: Array<string>) {
+    this.set("bins", Value.fromStringArray(value));
   }
 }
