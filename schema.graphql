@@ -39,15 +39,11 @@ type HistoricalFrame @entity {
 
 type BookIncrement @entity {
   id: ID!
-	bin: String!
   amount: BigInt!
 }
 
 type BookBin @entity {
   id: ID! 
-	base: String!
-	quote: String!
-	type: String!
   book: [ID!]!
 }
 
@@ -56,9 +52,9 @@ type OrderBook @entity {
 	base: String!
 	quote: String!
   direction: String!
+	rate: BigDecimal!
 	total: BigInt!
-	max: String!
-  ceiling: String!
+  ceiling: BigDecimal!
 	bins: [String!]!
 }
 

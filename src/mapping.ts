@@ -9,7 +9,23 @@ export function handleOrder(data: cosmos.EventData): void {
 	
 	if (order == null) {
 		order = new Order(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`);
-		addLiquidity(order, data)
+		if (order.orderType == "limit") {
+			addLiquidity(order, data)
+		}
+		if (order.orderType == "market") {
+			let orderBookId = join([order.denomBid, order.denomAsk, "sell"])
+	
+			let book = OrderBook.load(orderBookId)
+			if (book == null) {
+				book = new OrderBook(orderBookId)
+				book.rate = order.rate
+				book.total = BigInt.zero()
+				book.ceiling = placeCeiling(order.rate)
+			} else {
+				book.rate = order.rate
+				book.ceiling = placeCeiling(order.rate)
+			}
+		}
 	}
 
 	order.owner = data.event.getAttributeValue("owner")
@@ -39,7 +55,7 @@ export function handleOrder(data: cosmos.EventData): void {
 // Add liquidity to books
 function addLiquidity(order: Order, data: cosmos.EventData): void {
 	
-	// First pull order book
+	// First sell order book
 	let base = order.denomBid
 	let quote = order.denomAsk
 	let direction = "sell"
@@ -51,102 +67,72 @@ function addLiquidity(order: Order, data: cosmos.EventData): void {
 		book.base = base
 		book.quote = quote
 		book.direction = direction
-		book.total = order.amount
-		book.max = order.rate.toString()
-		book.ceiling = placeCeiling(order.rate).toString()
-		book.save()
+		book.rate = order.rate
+		book.total = BigInt.zero()
+		book.ceiling = placeCeiling(order.rate)
 	}
+
+	book.total = book.total.plus(order.amount)
+
+	book.save()
 
 	var binId: string
 	var bin: BookBin | null
 	var incrementId: string
 	var increment: BookIncrement | null
+	let offset = 0
 
-	if (order.rate.gt(BigDecimal.fromString(book.max))) {
-		book.max = order.rate.toString()
-		let orderCeiling = placeCeiling(order.rate)
-		if (orderCeiling.gt(BigDecimal.fromString(book.ceiling))) {
-			// Add books until placeCeiling
-			// Do not worry about adding in order volumes
-			let bookCeiling = BigDecimal.fromString(book.ceiling)
-			let place = bookCeiling
-			
-			while (bookCeiling.lt(orderCeiling)) {	
-				binId = join([base, quote, direction, place.toString()])
-				bin = new BookBin(binId)
-				incrementId = join([base, quote, direction, place.toString(), "0"])
-				increment = new BookIncrement(incrementId)
+	let orderCeiling = placeCeiling(order.rate)
 
-				bookCeiling = bookCeiling.times(BigDecimal.fromString("10"))
-			}
+	if (orderCeiling.gt(book.ceiling)) {
+		while (orderCeiling.gt(book.ceiling)) {
+			offset++
+			orderCeiling.div(BigDecimal.fromString("10"))
 		}
-		book.save()
 	}
 
-	let place = BigDecimal.fromString(book.ceiling).div(BigDecimal.fromString("10"))
+	if (orderCeiling.lt(book.ceiling)) {
+		while (orderCeiling.gt(book.ceiling)) {
+			offset--
+			orderCeiling.times(BigDecimal.fromString("10"))
+		}
+	}
+	
+	let place = book.ceiling.div(BigDecimal.fromString("10"))
 
 	var sigPrice: number
 	// var bin: BookBin | null
 
 	var id: string
 	// Six bins
-	for (let i = 0; i < 6; i++) {
-		sigPrice = sigFigs(parseFloat(order.rate.toString()), i+1)
+	for (let i = 1; i < 6; i++) {
+		
+		if (place.gt(orderCeiling) || place.equals(orderCeiling)) {
+			sigPrice = parseFloat(place.toString())
+		} else {
+			sigPrice = sigFigs(parseFloat(order.rate.toString()), i+offset)
+		}
 
 		binId =  join([base, quote, direction, place.toString()])
 		bin = BookBin.load(binId)
-		bookEntity = OrderBook.load(id)
-		if (bookEntity== null) {
-			bookEntity = new OrderBook(id)
-			bookEntity.base = order.denomBid
-			bookEntity.quote = order.denomAsk
-			bookEntity.type = place.toString()
-			bookEntity.max = sigPrice.toString()
-			bookEntity.min = sigPrice.toString()
-		} else {
-			if (bookEntity.max
-		}
-		
-		if (sigPrice > parseFloat(bookEntity.max)) {
-			bookEntity.max = sigPrice.toString()
-		}
 
-		if (sigPrice < parseFloat(bookEntity.min)) {
-			bookEntity.min = sigPrice.toString()
+		if (bin == null) {
+			bin = new BookBin(binId)
 		}
 		
-		let increment = new Increment(order.denomBid, order.denomAsk, "sell", sigPrice)
-		let incrementEntity = BookIncrement.load(increment.getID())
+		let incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+		let incrementEntity = BookIncrement.load(incrementId)
 		
 		if (incrementEntity == null) {
-			incrementEntity = new BookIncrement(id)
-			incrementEntity.bin = sigPrice.toString()
+			incrementEntity = new BookIncrement(incrementId)
 			incrementEntity.amount = BigInt.zero()
-			bookEntity.book.push(incrementEntity.id)
 		}
 
 		incrementEntity.amount = incrementEntity.amount.plus(order.amount)
+		
+		bin.book.push(incrementEntity.id)
+
 		place = place.div(BigDecimal.fromString("10"))
-	}
-
-	// Check adjacent bin below and delete if exist
-	book = new Book(order.denomBid, order.denomAsk, place.toString())
-	id = book.getID();
-	bookEntity = OrderBook.load(id)
-	
-	if (bookEntity != null) {
-		bookEntity.book.forEach((inc) => store.remove("BookIncrement", inc))
-		store.remove("OrderBook", bookEntity.id)
-	}
-
-	// Check adjacent bin above and delete if exist
-	book = new Book(order.denomBid, order.denomAsk, placeCeiling.toString())
-	id = book.getID();
-	bookEntity = OrderBook.load(id)
-	
-	if (bookEntity != null) {
-		bookEntity.book.forEach((inc) => store.remove("BookIncrement", inc))
-		store.remove("OrderBook", bookEntity.id)
 	}
 }
 
