@@ -10,7 +10,7 @@ export function handleOrder(data: cosmos.EventData): void {
 	if (order == null) {
 		order = new Order(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`);
 		if (order.orderType == "limit") {
-			addLiquidity(order, data)
+			addLiquidity(order)
 		}
 		if (order.orderType == "market") {
 			let orderBookId = join([order.denomBid, order.denomAsk, "sell"])
@@ -53,23 +53,37 @@ export function handleOrder(data: cosmos.EventData): void {
 }
 
 // Add liquidity to books
-function addLiquidity(order: Order, data: cosmos.EventData): void {
-	
-	// First sell order book
+function addLiquidity(order: Order): void {
+	addOrder(order, "sell")
+	addOrder(order, "buy")
+}
+
+function addOrder(order: Order, direction: string) {
 	let base = order.denomBid
 	let quote = order.denomAsk
-	let direction = "sell"
+	
+	if (direction = "buy") {
+		base = order.denomAsk
+		quote = order.denomBid
+	}
+	
 	let orderBookId = join([base, quote, direction])
 	
 	let book = OrderBook.load(orderBookId)
+	
 	if (book == null) {
 		book = new OrderBook(orderBookId)
 		book.base = base
 		book.quote = quote
 		book.direction = direction
-		book.rate = order.rate
 		book.total = BigInt.zero()
-		book.ceiling = placeCeiling(order.rate)
+		if (direction == "sell") {
+			book.rate = order.rate
+		} else {
+			book.rate = BigDecimal.fromString("1").div(order.rate)
+		}
+		
+		book.ceiling = placeCeiling(book.rate)
 	}
 
 	book.total = book.total.plus(order.amount)
@@ -78,12 +92,15 @@ function addLiquidity(order: Order, data: cosmos.EventData): void {
 
 	var binId: string
 	var bin: BookBin | null
-	var incrementId: string
-	var increment: BookIncrement | null
 	let offset = 0
-
-	let orderCeiling = placeCeiling(order.rate)
-
+	var orderCeiling: BigDecimal
+	if (direction == "sell") {
+		orderCeiling = placeCeiling(order.rate)
+	} else {
+		orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+	}
+	
+	
 	if (orderCeiling.gt(book.ceiling)) {
 		while (orderCeiling.gt(book.ceiling)) {
 			offset++
@@ -101,13 +118,12 @@ function addLiquidity(order: Order, data: cosmos.EventData): void {
 	let place = book.ceiling.div(BigDecimal.fromString("10"))
 
 	var sigPrice: number
-	// var bin: BookBin | null
-
-	var id: string
-	// Six bins
+	var incrementId: string
+	var incrementEntity: BookIncrement | null
+	
 	for (let i = 1; i < 6; i++) {
 		
-		if (place.gt(orderCeiling) || place.equals(orderCeiling)) {
+		if (place.gt(order.rate)) {
 			sigPrice = parseFloat(place.toString())
 		} else {
 			sigPrice = sigFigs(parseFloat(order.rate.toString()), i+offset)
@@ -120,8 +136,8 @@ function addLiquidity(order: Order, data: cosmos.EventData): void {
 			bin = new BookBin(binId)
 		}
 		
-		let incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
-		let incrementEntity = BookIncrement.load(incrementId)
+		incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+		incrementEntity = BookIncrement.load(incrementId)
 		
 		if (incrementEntity == null) {
 			incrementEntity = new BookIncrement(incrementId)
@@ -129,6 +145,7 @@ function addLiquidity(order: Order, data: cosmos.EventData): void {
 		}
 
 		incrementEntity.amount = incrementEntity.amount.plus(order.amount)
+		incrementEntity.orders.push(order.id)
 		
 		bin.book.push(incrementEntity.id)
 

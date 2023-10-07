@@ -419,6 +419,19 @@ export class BookIncrement extends Entity {
   set amount(value: BigInt) {
     this.set("amount", Value.fromBigInt(value));
   }
+
+  get orders(): Array<string> {
+    let value = this.get("orders");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toStringArray();
+    }
+  }
+
+  set orders(value: Array<string>) {
+    this.set("orders", Value.fromStringArray(value));
+  }
 }
 
 export class BookBin extends Entity {
