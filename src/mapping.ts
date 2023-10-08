@@ -13,18 +13,8 @@ export function handleOrder(data: cosmos.EventData): void {
 			addLiquidity(order)
 		}
 		if (order.orderType == "market") {
-			let orderBookId = join([order.denomBid, order.denomAsk, "sell"])
-	
-			let book = OrderBook.load(orderBookId)
-			if (book == null) {
-				book = new OrderBook(orderBookId)
-				book.rate = order.rate
-				book.total = BigInt.zero()
-				book.ceiling = placeCeiling(order.rate)
-			} else {
-				book.rate = order.rate
-				book.ceiling = placeCeiling(order.rate)
-			}
+			updateBook(order, "sell")
+			updateBook(order, "buy")
 		}
 	}
 
@@ -52,11 +42,115 @@ export function handleOrder(data: cosmos.EventData): void {
 	}
 }
 
+function updateBook(order: Order, direction: string) {
+	let base = order.denomBid
+	let quote = order.denomAsk
+	
+	if (direction = "buy") {
+		base = order.denomAsk
+		quote = order.denomBid
+	}
+	
+	let orderBookId = join([base, quote, direction])
+	
+	let book = OrderBook.load(orderBookId)
+			
+	if (book == null) {
+		book = new OrderBook(orderBookId)
+		book.rate = order.rate
+		book.total = BigInt.zero()
+		book.ceiling = placeCeiling(order.rate)
+	} else {
+		book.rate = order.rate
+		book.ceiling = placeCeiling(order.rate)
+	}
+
+	var orderCeiling: BigDecimal
+
+	if (direction == "sell") {
+		book.rate = order.rate
+		orderCeiling = placeCeiling(order.rate)
+	} else {
+		book.rate = BigDecimal.fromString("1").div(order.rate)
+		orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+	}
+
+	if (book.ceiling != orderCeiling) {
+		// Find offset
+		let offset = 0
+
+		if (orderCeiling.gt(book.ceiling)) {
+			while (orderCeiling.gt(book.ceiling)) {
+				offset++
+				orderCeiling.div(BigDecimal.fromString("10"))
+			}
+		}
+	
+		if (orderCeiling.lt(book.ceiling)) {
+			while (orderCeiling.gt(book.ceiling)) {
+				offset--
+				orderCeiling.times(BigDecimal.fromString("10"))
+			}
+		}
+
+		var binId: string
+		var bin: BookBin | null
+		let place = orderCeiling.div(BigDecimal.fromString("10"))
+		var sigPrice: number
+		var incrementId: string
+		var incrementEntity: BookIncrement
+
+		if (offset > 0) {
+			while (offset > 0) {
+				// First create bin
+				binId =  join([base, quote, direction, place.toString()])
+				bin = new BookBin(binId)
+
+				// We are moving everything up.  Everything existing fits
+				// in the lowest increment of this magnitude.
+				sigPrice = parseFloat(place.toString())
+				
+				// Create the increment for the already existing orders
+				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+				incrementEntity = new BookIncrement(incrementId)
+				incrementEntity.amount = book.total
+				
+				// Now copy all of the orders over to the new bin in this particular increment
+				binId =  join([base, quote, direction, book.ceiling.div(BigDecimal.fromString("10")).toString()]) 
+				bin = BookBin.load(binId)
+
+				if (bin != null) {
+
+				}
+				bin.book.forEach(increment => {
+					
+				});
+				incrementEntity.orders.push(order.id)
+				
+				offset--
+			}
+		}
+
+		if (offset < 0) {
+			while (offset < 0) {
+				// First create bin
+				binId =  join([base, quote, direction, place.toString()])
+				bin = new BookBin(binId)
+
+				offset++
+			} 
+		}
+	}
+}
+
+
 // Add liquidity to books
 function addLiquidity(order: Order): void {
 	addOrder(order, "sell")
 	addOrder(order, "buy")
 }
+
+
 
 function addOrder(order: Order, direction: string) {
 	let base = order.denomBid
@@ -123,17 +217,17 @@ function addOrder(order: Order, direction: string) {
 	
 	for (let i = 1; i < 6; i++) {
 		
-		if (place.gt(order.rate)) {
-			sigPrice = parseFloat(place.toString())
-		} else {
-			sigPrice = sigFigs(parseFloat(order.rate.toString()), i+offset)
-		}
-
 		binId =  join([base, quote, direction, place.toString()])
 		bin = BookBin.load(binId)
 
 		if (bin == null) {
 			bin = new BookBin(binId)
+		}
+
+		if (place.gt(order.rate)) {
+			sigPrice = parseFloat(place.toString())
+		} else {
+			sigPrice = sigFigs(parseFloat(order.rate.toString()), i+offset)
 		}
 		
 		incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
