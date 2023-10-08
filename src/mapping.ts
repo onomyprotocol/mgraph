@@ -112,21 +112,33 @@ function updateBook(order: Order, direction: string) {
 				
 				// Create the increment for the already existing orders
 				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+
+				// Add the incrementId to the bin book and then save
+				bin.book.push(incrementId)
+				bin.save()
+
+				// Create the new increment entity that will hold all of the previous orders
 				incrementEntity = new BookIncrement(incrementId)
 				incrementEntity.amount = book.total
 				
-				// Now copy all of the orders over to the new bin in this particular increment
+				// Now copy all of the orders from the existing top bin over to the new bin in the place increment
 				binId =  join([base, quote, direction, book.ceiling.div(BigDecimal.fromString("10")).toString()]) 
 				bin = BookBin.load(binId)
 
 				if (bin != null) {
-
+					var increment: BookIncrement | null
+					bin.book.forEach(incrementId => {
+						increment = BookIncrement.load(incrementId)
+						if (increment != null) {
+							increment.orders.forEach(orderId => {
+								incrementEntity.orders.push(orderId)
+							})
+						}
+					});
+					incrementEntity.orders.push(order.id)
 				}
-				bin.book.forEach(increment => {
-					
-				});
-				incrementEntity.orders.push(order.id)
-				
+
+				incrementEntity.save()
 				offset--
 			}
 		}
