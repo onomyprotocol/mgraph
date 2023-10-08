@@ -77,18 +77,18 @@ function updateBook(order: Order, direction: string) {
 
 	if (book.ceiling != orderCeiling) {
 		// Find offset
-		let offset = 0
+		let bookOffset = 0
 
 		if (orderCeiling.gt(book.ceiling)) {
 			while (orderCeiling.gt(book.ceiling)) {
-				offset++
+				bookOffset++
 				orderCeiling.div(BigDecimal.fromString("10"))
 			}
 		}
 	
 		if (orderCeiling.lt(book.ceiling)) {
 			while (orderCeiling.gt(book.ceiling)) {
-				offset--
+				bookOffset--
 				orderCeiling.times(BigDecimal.fromString("10"))
 			}
 		}
@@ -96,15 +96,19 @@ function updateBook(order: Order, direction: string) {
 		var binId: string
 		var bin: BookBin | null
 		let place = orderCeiling.div(BigDecimal.fromString("10"))
+		let bookPlace = book.ceiling.div(BigDecimal.fromString("10")).toString()
 		var sigPrice: number
 		var incrementId: string
-		var incrementEntity: BookIncrement
+		var incrementEntity: BookIncrement | null
 
-		if (offset > 0) {
-			while (offset > 0) {
+		if (bookOffset > 0) {
+			while (bookOffset > 0) {
 				// First create bin
 				binId =  join([base, quote, direction, place.toString()])
 				bin = new BookBin(binId)
+
+				// Add new bin to Order Book entity
+				book.bins.push(binId)
 
 				// We are moving everything up.  Everything existing fits
 				// in the lowest increment of this magnitude.
@@ -122,7 +126,7 @@ function updateBook(order: Order, direction: string) {
 				incrementEntity.amount = book.total
 				
 				// Now copy all of the orders from the existing top bin over to the new bin in the place increment
-				binId =  join([base, quote, direction, book.ceiling.div(BigDecimal.fromString("10")).toString()]) 
+				binId =  join([base, quote, direction, bookPlace]) 
 				bin = BookBin.load(binId)
 
 				if (bin != null) {
@@ -139,21 +143,97 @@ function updateBook(order: Order, direction: string) {
 				}
 
 				incrementEntity.save()
-				offset--
+				bookOffset--
 			}
 		}
 
-		if (offset < 0) {
-			while (offset < 0) {
-				// First create bin
+		if (bookOffset < 0) {
+			// First get all orders
+			// We will need these to bin below
+			binId =  join([base, quote, direction, bookPlace])
+			bin = BookBin.load(binId)
+			var orders: string[]
+			orders = []
+			if (bin != null) {
+				bin.book.forEach(incrementId => {
+					increment = BookIncrement.load(incrementId)
+					if (increment != null) {
+						increment.orders.forEach(orderId => {
+							orders.push(orderId)
+						})
+					}
+				});
+			}
+
+			// Working on the bottom of the bins
+			place = place.div(BigDecimal.fromString("10000"))
+
+			while (bookOffset < 0) {
+
+				// Each round move one bin down
+				place = place.div(BigDecimal.fromString("10000"))
+
+				// First create bin based on decimal place of the order
 				binId =  join([base, quote, direction, place.toString()])
 				bin = new BookBin(binId)
 
-				offset++
-			} 
+				// We are moving everything down
+				// Add new bin to Order Book entity
+				book.bins.push(binId)
+
+				var orderExisting: Order | null
+				var orderExistingPlace: BigDecimal
+				var orderOffset: number
+
+				orders.forEach(orderId => {
+					
+					orderExisting = Order.load(orderId)
+					if (orderExisting != null) {
+						
+						orderExistingPlace = placeCeiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
+
+						if (orderExistingPlace.gt(place)) {
+							while (orderExistingPlace.gt(place)) {
+								orderOffset++
+								orderExistingPlace.div(BigDecimal.fromString("10"))
+							}
+						}
+					
+						if (orderExistingPlace.lt(place)) {
+							while (orderExistingPlace.gt(place)) {
+								orderOffset--
+								orderExistingPlace.times(BigDecimal.fromString("10"))
+							}
+						}
+						
+						if (place.gt(orderExistingPlace)) {
+							sigPrice = parseFloat(place.toString())
+						} else {
+							sigPrice = sigFigs(parseFloat(order.rate.toString()), 1+orderOffset)
+						}
+						
+						incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+						incrementEntity = BookIncrement.load(incrementId)
+						
+						if (incrementEntity == null) {
+							incrementEntity = new BookIncrement(incrementId)
+							incrementEntity.amount = BigInt.zero()
+						}
+				
+						incrementEntity.amount = incrementEntity.amount.plus(order.amount)
+						incrementEntity.orders.push(order.id)
+						if (bin != null) {
+							bin.book.push(incrementEntity.id)
+						}
+					}
+					place = place.div(BigDecimal.fromString("10"))
+					bookOffset++
+				})
+			}
 		}
 	}
-}
+	
+
 
 
 // Add liquidity to books
