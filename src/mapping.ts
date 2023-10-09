@@ -2,22 +2,24 @@ import { cosmos } from "@graphprotocol/graph-ts";
 import { Order, HistoricalFrame, BookBin, BookIncrement, OrderBook } from "../generated/schema";
 import {BigInt, BigDecimal, store} from "@graphprotocol/graph-ts";
 import {Frame, FrameType} from "./Frame";
-import {sigFigs, join, placeCeiling} from "./utils";
+import {sigFigs, join, placeCeiling, removeId} from "./utils";
 
 export function handleOrder(data: cosmos.EventData): void {
 	let order = Order.load(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`)
 	
 	if (order == null) {
 		order = new Order(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`);
+
 		if (order.orderType == "limit") {
 			addLiquidity(order)
 		}
+		
 		if (order.orderType == "market") {
 			updateBook(order, "sell")
 			updateBook(order, "buy")
 		}
 	}
-
+	
 	order.owner = data.event.getAttributeValue("owner")
 	order.status = data.event.getAttributeValue("status")
 	order.orderType = data.event.getAttributeValue("order_type");	
@@ -135,7 +137,9 @@ function updateBook(order: Order, direction: string) {
 						increment = BookIncrement.load(incrementId)
 						if (increment != null) {
 							increment.orders.forEach(orderId => {
-								incrementEntity.orders.push(orderId)
+								if (incrementEntity != null){
+									incrementEntity.orders.push(orderId)
+								}
 							})
 						}
 					});
@@ -232,8 +236,7 @@ function updateBook(order: Order, direction: string) {
 			}
 		}
 	}
-	
-
+}
 
 
 // Add liquidity to books
@@ -331,17 +334,102 @@ function addOrder(order: Order, direction: string) {
 		}
 
 		incrementEntity.amount = incrementEntity.amount.plus(order.amount)
+		
 		incrementEntity.orders.push(order.id)
+		incrementEntity.save()
 		
 		bin.book.push(incrementEntity.id)
-
+		bin.save()
+		
 		place = place.div(BigDecimal.fromString("10"))
 	}
 }
 
 // Remove liquidity from books 
-function removeLiquidity(order: Order, data: cosmos.EventData): void {
+function removeLiquidity(order: Order): void {
+	subOrder(order, "sell")
+	subOrder(order, "buy")
 }
+
+function subOrder(order: Order, direction: string) {
+	let base = order.denomBid
+	let quote = order.denomAsk
+	
+	if (direction = "buy") {
+		base = order.denomAsk
+		quote = order.denomBid
+	}
+	
+	let orderBookId = join([base, quote, direction])
+	
+	let book = OrderBook.load(orderBookId)
+	
+	// Book shouldn't be null ever, but if it is lets skip
+	if (book != null) {
+		book.total = book.total.minus(order.amount)
+
+		book.save()
+
+		var binId: string
+		var bin: BookBin | null
+		let offset = 0
+		var orderCeiling: BigDecimal
+		if (direction == "sell") {
+			orderCeiling = placeCeiling(order.rate)
+		} else {
+			orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+		}
+	
+	
+		if (orderCeiling.gt(book.ceiling)) {
+			while (orderCeiling.gt(book.ceiling)) {
+				offset++
+				orderCeiling.div(BigDecimal.fromString("10"))
+			}
+		}
+
+		if (orderCeiling.lt(book.ceiling)) {
+			while (orderCeiling.gt(book.ceiling)) {
+				offset--
+				orderCeiling.times(BigDecimal.fromString("10"))
+			}
+		}
+
+		let place = book.ceiling.div(BigDecimal.fromString("10"))
+
+		var sigPrice: number
+		var incrementId: string
+		var incrementEntity: BookIncrement | null
+	
+		for (let i = 1; i < 6; i++) {
+			
+			binId =  join([base, quote, direction, place.toString()])
+			bin = BookBin.load(binId)
+
+			// Bin shouldn't be null but if it is
+			if (bin != null) {
+				if (place.gt(order.rate)) {
+					sigPrice = parseFloat(place.toString())
+				} else {
+					sigPrice = sigFigs(parseFloat(order.rate.toString()), i+offset)
+				}
+				
+				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+				incrementEntity = BookIncrement.load(incrementId)
+				
+				// Increment shouldn't be null but if it is skip
+				if (incrementEntity != null) {
+					incrementEntity.amount = incrementEntity.amount.minus(order.amount)
+					incrementEntity.orders = removeId(incrementEntity.orders, order.id)
+					incrementEntity.save()
+					place = place.div(BigDecimal.fromString("10"))
+				}
+			}
+		}
+	}
+}
+
+
 
 // updateExecutionHistoricalFrame aggregates trade execution prices into frames
 function updateHistoricalFrame(order: Order, data: cosmos.EventData): void {
