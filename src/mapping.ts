@@ -36,11 +36,15 @@ export function handleOrder(data: cosmos.EventData): void {
 	
 	if (data.event.getAttributeValue("status") == "filled") {
 		updateHistoricalFrame(order, data)
-		removeLiquidity(order, data)
+		if (data.event.getAttributeValue("limit")) {
+			removeLiquidity(order)
+		}
 	}
 
-	if (data.event.getAttributeValue("status") == "filled") {
-		removeLiquidity(order, data)
+	if (data.event.getAttributeValue("status") == "cancelled") {
+		if (data.event.getAttributeValue("limit")) {
+			removeLiquidity(order)
+		}
 	}
 }
 
