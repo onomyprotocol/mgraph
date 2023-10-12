@@ -88,7 +88,7 @@ function updateBook(order: Order, direction: string) {
 		book.rate = BigDecimal.fromString("1").div(order.rate)
 	}
 
-	if (book.ceiling = orderCeiling) return
+	if (book.ceiling == orderCeiling) return
 
 	
 	// Find offset
@@ -113,12 +113,13 @@ function updateBook(order: Order, direction: string) {
 	let place = orderCeiling.div(BigDecimal.fromString("10"))
 	let bookPlace = book.ceiling.div(BigDecimal.fromString("10")).toString()
 	
-
 	// Collect all orders
 	binId =  join([base, quote, direction, bookPlace])
 	bin = BookBin.load(binId)
+	
 	var orders: string[]
 	orders = []
+	
 	var increment: BookIncrement | null
 	
 	if (bookOffset != 0) {
@@ -139,12 +140,9 @@ function updateBook(order: Order, direction: string) {
 		place = place.div(BigDecimal.fromString("10000"))
 	}
 
-	var binId: string
-	var bin: BookBin | null
 	var sigPrice: number
 	var incrementId: string
-	var incrementEntity: BookIncrement | null
-
+	
 	while (bookOffset != 0) {
 
 		if (bookOffset < 0) {
@@ -154,7 +152,6 @@ function updateBook(order: Order, direction: string) {
 			place = place.times(BigDecimal.fromString("10"))
 		}
 		
-
 		// First create bin based on decimal place of the order
 		binId =  join([base, quote, direction, place.toString()])
 		bin = new BookBin(binId)
