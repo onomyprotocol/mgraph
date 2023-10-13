@@ -4,52 +4,56 @@ import {BigInt, BigDecimal, store} from "@graphprotocol/graph-ts";
 import {Frame, FrameType} from "./Frame";
 import {sigFigs, join, placeCeiling, removeId} from "./utils";
 
-export function handleOrder(data: cosmos.EventData): void {
-	let order = Order.load(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`)
+export function handleTx(data: cosmos.TransactionData): void {
+	data.tx.result.events.forEach(event => {
+		if (event.eventType == "order") {
+			let order = Order.load(`${event.eventType}-${event.getAttributeValue("uid")}`)
 	
-	// If order == null, then the indexer hasn't seen this order
-	// If it is a limit / stop order then we add liquidity to the indexed books
-	// If it is a market order, we adjust the book price and bins if needed
-	if (order == null) {
-		order = new Order(`${data.event.eventType}-${data.event.getAttributeValue("uid")}`);
+			// If order == null, then the indexer hasn't seen this order
+			// If it is a limit / stop order then we add liquidity to the indexed books
+			// If it is a market order, we adjust the book price and bins if needed
+			if (order == null) {
+				order = new Order(`${event.eventType}-${event.getAttributeValue("uid")}`);
 
-		if (order.orderType == "limit") {
-			addLiquidity(order)
-		}
-		
-		if (order.orderType == "market") {
-			updateBook(order, "sell")
-			updateBook(order, "buy")
-		}
-	}
-	
-	order.owner = data.event.getAttributeValue("owner")
-	order.status = data.event.getAttributeValue("status")
-	order.orderType = data.event.getAttributeValue("order_type");	
-	order.denomAsk = data.event.getAttributeValue("denom_ask");
-	order.denomBid = data.event.getAttributeValue("denom_bid");
-	order.amount = BigInt.fromString(data.event.getAttributeValue("amount"));
-	let rateString = data.event.getAttributeValue("rate");
-	let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-	let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-	order.rate = rateNumerator.div(rateDenominator)
-	order.begTime = BigInt.fromString(data.event.getAttributeValue("begin-time"));
-	order.updTime = BigInt.fromString(data.event.getAttributeValue("update-time"));
-	order.save();
-	
-	if (data.event.getAttributeValue("status") == "filled") {
-		updateHistoricalFrame(order, data)
-		
-		if (data.event.getAttributeValue("limit")) {
-			removeLiquidity(order)
-		}
-	}
+				if (order.orderType == "limit") {
+					addLiquidity(order)
+				}
+				
+				if (order.orderType == "market") {
+					updateBook(order, "sell")
+					updateBook(order, "buy")
+				}
+			}
 
-	if (data.event.getAttributeValue("status") == "cancelled") {
-		if (data.event.getAttributeValue("limit")) {
-			removeLiquidity(order)
+			order.owner = event.getAttributeValue("owner")
+			order.status = event.getAttributeValue("status")
+			order.orderType = event.getAttributeValue("order_type");	
+			order.denomAsk = event.getAttributeValue("denom_ask");
+			order.denomBid = event.getAttributeValue("denom_bid");
+			order.amount = BigInt.fromString(event.getAttributeValue("amount"));
+			let rateString = event.getAttributeValue("rate");
+			let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+			let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+			order.rate = rateNumerator.div(rateDenominator)
+			order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
+			order.updTime = BigInt.fromString(event.getAttributeValue("update-time"));
+			order.save();
+
+			if (event.getAttributeValue("status") == "filled") {
+				updateHistoricalFrame(order, data)
+				
+				if (event.getAttributeValue("limit")) {
+					removeLiquidity(order)
+				}
+			}
+
+			if (event.getAttributeValue("status") == "cancelled") {
+				if (event.getAttributeValue("limit")) {
+					removeLiquidity(order)
+				}
+			}
 		}
-	}
+	})
 }
 
 function updateBook(order: Order, direction: string) {
@@ -455,7 +459,7 @@ function updateHistoricalFrame(order: Order, data: cosmos.EventData): void {
 	id = frame.getID();
 	frameEntity = HistoricalFrame.load(id)
 
-			let rateString = data.event.getAttributeValue("rate");
+			let rateString = event.getAttributeValue("rate");
 			let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
 			let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
 			let reversePrice = rateNumerator.div(rateDenominator)

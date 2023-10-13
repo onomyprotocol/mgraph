@@ -13,7 +13,6 @@ dataSources:
       entities:
         - Order
         - HistoricalFrame
-      eventHandlers:
-        - event: order
-          handler: handleOrder
+      transactionHandlers:
+        - handler: handleTx
       file: ./src/mapping.ts
