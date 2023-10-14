@@ -40,7 +40,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 			order.save();
 
 			if (event.getAttributeValue("status") == "filled") {
-				updateHistoricalFrame(order, data)
+				updateHistoricalFrame(order, event)
 				
 				if (event.getAttributeValue("limit")) {
 					removeLiquidity(order)
@@ -117,29 +117,6 @@ function updateBook(order: Order, direction: string) {
 	var bin: BookBin | null
 	let orderPlace = orderCeiling.div(BigDecimal.fromString("10"))
 	let bookPlace = book.ceiling.div(BigDecimal.fromString("10"))
-	
-	
-	
-	// Collect all orders if BookOffset is not zero
-	var orders: string[]
-	orders = []
-	
-	var increment: BookIncrement | null
-	
-	if (bookOffset != 0) {
-		binId =  join([base, quote, direction, bookPlace.toString()])
-		bin = BookBin.load(binId)
-		if (bin != null) {
-			bin.book.forEach(incrementId => {
-				increment = BookIncrement.load(incrementId)
-				if (increment != null) {
-					increment.orders.forEach(orderId => {
-						orders.push(orderId)
-					})
-				}
-			});
-		}
-	}
 
 	// If bookOffset less than zero, then add bins below
 	if (bookOffset < 0) {
@@ -167,15 +144,15 @@ function updateBook(order: Order, direction: string) {
 		}
 		
 		// Remove stale place from order-book bin array
-		book.bins = book.bins.filter(function(bin) {
-			return bin != stalePlace;
-		});
+		book.bins = removeId(book.bins, stalePlace);
+		// Add new place to order-book bin array
+		book.bins.push(bookPlace.toString())
 
 		// Get Bin that will be removed
 		binId =  join([base, quote, direction, stalePlace])
 		bin = BookBin.load(binId)
 		
-		// Remove increments from storage
+		// Remove stale increments from storage
 		if (bin != null) {
 			bin.book.forEach(incrementId => {
 				store.remove("BookIncrement", incrementId)
@@ -185,7 +162,7 @@ function updateBook(order: Order, direction: string) {
 		// Remove BookBin
 		store.remove("BookBin", binId)
 
-		// First create bin based on decimal place of the order
+		// Create new bin based on current book decimal place
 		binId =  join([base, quote, direction, bookPlace.toString()])
 		bin = new BookBin(binId)
 
@@ -195,9 +172,12 @@ function updateBook(order: Order, direction: string) {
 		var orderExisting: Order | null
 		var orderExistingPlace: BigDecimal
 		var orderOffset: number
+		var increment: BookIncrement | null
 
-		orders.forEach(orderId => {
+		book.orders.forEach(orderId => {
 			orderExisting = Order.load(orderId)
+			// All orders should not be null, but need this because
+			// load function may return null
 			if (orderExisting != null) {
 				
 				orderExistingPlace = placeCeiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
@@ -222,12 +202,13 @@ function updateBook(order: Order, direction: string) {
 					sigPrice = sigFigs(parseFloat(order.rate.toString()), 1+orderOffset)
 				}
 				
-				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
+				incrementId = join([base, quote, direction, bookPlace.toString(), sigPrice.toString()])
 				increment = BookIncrement.load(incrementId)
 				
 				if (increment == null) {
 					increment = new BookIncrement(incrementId)
 					increment.amount = BigInt.zero()
+					increment.orders = []
 				}
 		
 				increment.amount = increment.amount.plus(order.amount)
@@ -274,11 +255,12 @@ function addOrder(order: Order, direction: string) {
 		}
 		
 		book.ceiling = placeCeiling(book.rate)
+		book.orders = []
+		book.bins = []
 	}
 
 	book.total = book.total.plus(order.amount)
-
-	book.save()
+	book.orders.push(order.id)
 
 	var binId: string
 	var bin: BookBin | null
@@ -289,7 +271,6 @@ function addOrder(order: Order, direction: string) {
 	} else {
 		orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
 	}
-	
 	
 	if (orderCeiling.gt(book.ceiling)) {
 		while (orderCeiling.gt(book.ceiling)) {
@@ -318,6 +299,7 @@ function addOrder(order: Order, direction: string) {
 
 		if (bin == null) {
 			bin = new BookBin(binId)
+			book.bins.push(binId)
 		}
 
 		if (place.gt(order.rate)) {
@@ -344,6 +326,8 @@ function addOrder(order: Order, direction: string) {
 		
 		place = place.div(BigDecimal.fromString("10"))
 	}
+	
+	book.save()
 }
 
 // Remove liquidity from books 
@@ -368,7 +352,7 @@ function subOrder(order: Order, direction: string) {
 	// Book shouldn't be null ever, but if it is lets skip
 	if (book != null) {
 		book.total = book.total.minus(order.amount)
-
+		book.orders = removeId(book.orders, order.id)
 		book.save()
 
 		var binId: string
@@ -380,7 +364,6 @@ function subOrder(order: Order, direction: string) {
 		} else {
 			orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
 		}
-	
 	
 		if (orderCeiling.gt(book.ceiling)) {
 			while (orderCeiling.gt(book.ceiling)) {
@@ -420,20 +403,24 @@ function subOrder(order: Order, direction: string) {
 				
 				// Increment shouldn't be null but if it is skip
 				if (incrementEntity != null) {
-					incrementEntity.amount = incrementEntity.amount.minus(order.amount)
 					incrementEntity.orders = removeId(incrementEntity.orders, order.id)
-					incrementEntity.save()
-					place = place.div(BigDecimal.fromString("10"))
+
+					if (incrementEntity.orders.length == 0) {
+						store.remove("BookIncrement", incrementId)
+					} else {
+						incrementEntity.amount = incrementEntity.amount.minus(order.amount)
+						incrementEntity.save()
+					}
 				}
+
+				place = place.div(BigDecimal.fromString("10"))
 			}
 		}
 	}
 }
 
-
-
 // updateExecutionHistoricalFrame aggregates trade execution prices into frames
-function updateHistoricalFrame(order: Order, data: cosmos.EventData): void {
+function updateHistoricalFrame(order: Order, event: cosmos.Event): void {
   let timeStamp = order.updTime;
   let frameTypes = FrameType.all()
   
@@ -444,8 +431,6 @@ function updateHistoricalFrame(order: Order, data: cosmos.EventData): void {
 	let frame = new Frame(order.denomBid, order.denomAsk, timeStamp, frameType)
 
 	let id = frame.getID();
-
-
 	let frameEntity = HistoricalFrame.load(id)
 
 	if (frameEntity == null) {
@@ -484,42 +469,41 @@ function updateHistoricalFrame(order: Order, data: cosmos.EventData): void {
 	id = frame.getID();
 	frameEntity = HistoricalFrame.load(id)
 
-			let rateString = event.getAttributeValue("rate");
-			let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-			let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-			let reversePrice = rateNumerator.div(rateDenominator)
-			let reverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[0]))).div(BigInt.fromString(rateString.split(",")[1]))
+	let rateString = event.getAttributeValue("rate");
+	let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+	let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+	let reversePrice = rateNumerator.div(rateDenominator)
+	let reverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[0]))).div(BigInt.fromString(rateString.split(",")[1]))
 
-      if (frameEntity == null) {
-          frameEntity = new HistoricalFrame(id);
-          frameEntity.type = frameType;
-					frameEntity.base = frame.base
-					frameEntity.quote = frame.quote
-          frameEntity.startTime = frame.startTime
-          frameEntity.startPrice = reversePrice
-          frameEntity.endTime = frame.endTime
-          frameEntity.minPrice = reversePrice
-          frameEntity.maxPrice = reversePrice
-					frameEntity.volume = BigInt.zero()
-					frameEntity.transactionsCount = BigInt.zero()
-      }
+	if (frameEntity == null) {
+		frameEntity = new HistoricalFrame(id);
+		frameEntity.type = frameType;
+		frameEntity.base = frame.base
+		frameEntity.quote = frame.quote
+		frameEntity.startTime = frame.startTime
+		frameEntity.startPrice = reversePrice
+		frameEntity.endTime = frame.endTime
+		frameEntity.minPrice = reversePrice
+		frameEntity.maxPrice = reversePrice
+		frameEntity.volume = BigInt.zero()
+		frameEntity.transactionsCount = BigInt.zero()
+	}
 
-      frameEntity.transactionsCount = frameEntity.transactionsCount.plus(BigInt.fromI32(1))
-			frameEntity.updateTime = timeStamp
-      frameEntity.endPrice = reversePrice
+	frameEntity.transactionsCount = frameEntity.transactionsCount.plus(BigInt.fromI32(1))
+	frameEntity.updateTime = timeStamp
+	frameEntity.endPrice = reversePrice
 
       
-			if (frameEntity.minPrice.gt(reversePrice)) {
-				frameEntity.minPrice = reversePrice
-			}
-			
-			if (frameEntity.maxPrice.lt(reversePrice)) {
-				frameEntity.maxPrice = reversePrice
-			}
+	if (frameEntity.minPrice.gt(reversePrice)) {
+		frameEntity.minPrice = reversePrice
+	}
+	
+	if (frameEntity.maxPrice.lt(reversePrice)) {
+		frameEntity.maxPrice = reversePrice
+	}
 
-			frameEntity.volume = frameEntity.volume.plus(reverseAmount)
+	frameEntity.volume = frameEntity.volume.plus(reverseAmount)
 
-      frameEntity.save();
-			
+	frameEntity.save();	
   }
 }

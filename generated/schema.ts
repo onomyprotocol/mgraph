@@ -604,6 +604,19 @@ export class OrderBook extends Entity {
     this.set("ceiling", Value.fromBigDecimal(value));
   }
 
+  get orders(): Array<string> {
+    let value = this.get("orders");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toStringArray();
+    }
+  }
+
+  set orders(value: Array<string>) {
+    this.set("orders", Value.fromStringArray(value));
+  }
+
   get bins(): Array<string> {
     let value = this.get("bins");
     if (!value || value.kind == ValueKind.NULL) {
