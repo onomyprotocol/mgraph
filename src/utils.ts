@@ -10,13 +10,13 @@ export function sigFigs(n: number, sig: number) {
 }
 
 export function placeCeiling(rate: BigDecimal) {
-  var ceiling = BigDecimal.fromString(".000000001")
+	var ceiling = BigDecimal.fromString(".000000001")
 
 	while (ceiling.lt(rate)) {
 		ceiling.times(BigDecimal.fromString("10"))
 	}
 
-  return ceiling
+	return ceiling
 }
 
 export function removeId(arr: string[], value: string) {

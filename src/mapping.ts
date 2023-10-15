@@ -37,6 +37,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 			order.rate = rateNumerator.div(rateDenominator)
 			order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
 			order.updTime = BigInt.fromString(event.getAttributeValue("update-time"));
+			
 			order.save();
 
 			if (event.getAttributeValue("status") == "filled") {
@@ -71,7 +72,12 @@ function updateBook(order: Order, direction: string) {
 			
 	if (book == null) {
 		book = new OrderBook(orderBookId)
+		book.base = base
+		book.quote = quote
+		book.direction = direction
 		book.total = BigInt.zero()
+		book.bins = []
+		book.orders = []
 
 		if (direction == "sell") {
 			book.rate = order.rate
@@ -94,7 +100,6 @@ function updateBook(order: Order, direction: string) {
 
 	if (book.ceiling == orderCeiling) return
 
-	
 	// Book offset is the number of orders of magnitude to move
 	// the order books based on the current market order price
 	let bookOffset = 0
@@ -127,6 +132,10 @@ function updateBook(order: Order, direction: string) {
 	var sigPrice: number
 	var incrementId: string
 	var stalePlace: string
+	var orderExisting: Order | null
+	var orderExistingPlace: BigDecimal
+	var orderOffset: number
+	var increment: BookIncrement | null
 
 	while (bookOffset != 0) {
 		if (bookOffset < 0) {
@@ -140,18 +149,16 @@ function updateBook(order: Order, direction: string) {
 			stalePlace = bookPlace.div(BigDecimal.fromString("10000")).toString()
 
 			// Each round add on a bin to top
-			bookPlace = bookPlace.div(BigDecimal.fromString("10"))
+			bookPlace = bookPlace.times(BigDecimal.fromString("10"))
 		}
-		
-		// Remove stale place from order-book bin array
-		book.bins = removeId(book.bins, stalePlace);
-		// Add new place to order-book bin array
-		book.bins.push(bookPlace.toString())
 
 		// Get Bin that will be removed
 		binId =  join([base, quote, direction, stalePlace])
 		bin = BookBin.load(binId)
 		
+		// Remove stale bin from order-book bin array
+		book.bins = removeId(book.bins, binId);
+
 		// Remove stale increments from storage
 		if (bin != null) {
 			bin.book.forEach(incrementId => {
@@ -165,14 +172,10 @@ function updateBook(order: Order, direction: string) {
 		// Create new bin based on current book decimal place
 		binId =  join([base, quote, direction, bookPlace.toString()])
 		bin = new BookBin(binId)
+		bin.book = []
 
 		// Add new bin to Order Book entity
 		book.bins.push(binId)
-
-		var orderExisting: Order | null
-		var orderExistingPlace: BigDecimal
-		var orderOffset: number
-		var increment: BookIncrement | null
 
 		book.orders.forEach(orderId => {
 			orderExisting = Order.load(orderId)
@@ -218,7 +221,14 @@ function updateBook(order: Order, direction: string) {
 				}
 			}
 		})
+		bin.save()
+		if (bookOffset < 0) {
+			bookOffset++
+		} else {
+			bookOffset--
+		}
 	}
+	book.save()
 }
 
 // Add liquidity to books

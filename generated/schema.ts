@@ -407,6 +407,19 @@ export class BookIncrement extends Entity {
     this.set("id", Value.fromString(value));
   }
 
+  get place(): string {
+    let value = this.get("place");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set place(value: string) {
+    this.set("place", Value.fromString(value));
+  }
+
   get amount(): BigInt {
     let value = this.get("amount");
     if (!value || value.kind == ValueKind.NULL) {
