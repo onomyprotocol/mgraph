@@ -36,3 +36,28 @@ type HistoricalFrame @entity {
 	volume: BigInt!
   transactionsCount: BigInt!
 }
+
+type BookIncrement @entity {
+  id: ID!
+	place: String!
+  amount: BigInt!
+  orders: [ID!]!
+}
+
+type BookBin @entity {
+  id: ID! 
+  book: [ID!]!
+}
+
+type OrderBook @entity {
+	id: ID!
+	base: String!
+	quote: String!
+  direction: String!
+	rate: BigDecimal!
+	total: BigInt!
+  ceiling: BigDecimal!
+  orders: [String!]!
+	bins: [String!]!
+}
+

@@ -8,34 +8,38 @@ export function handleTx(data: cosmos.TransactionData): void {
 	data.tx.result.events.forEach(event => {
 		if (event.eventType == "order") {
 			let order = Order.load(`${event.eventType}-${event.getAttributeValue("uid")}`)
-	
+			
 			// If order == null, then the indexer hasn't seen this order
 			// If it is a limit / stop order then we add liquidity to the indexed books
 			// If it is a market order, we adjust the book price and bins if needed
 			if (order == null) {
 				order = new Order(`${event.eventType}-${event.getAttributeValue("uid")}`);
-
+				
+				order.owner = event.getAttributeValue("owner")
+				order.orderType = event.getAttributeValue("order_type");	
+				order.denomAsk = event.getAttributeValue("denom_ask");
+				order.denomBid = event.getAttributeValue("denom_bid");
+				order.amount = BigInt.fromString(event.getAttributeValue("amount"));
+				let rateString = event.getAttributeValue("rate");
+				let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+				let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+				order.rate = rateNumerator.div(rateDenominator)
+				order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
+				/*
 				if (order.orderType == "limit") {
 					addLiquidity(order)
 				}
-				
+				*/
+								
 				if (order.orderType == "market") {
 					updateBook(order, "sell")
 					updateBook(order, "buy")
 				}
+				
 			}
 
-			order.owner = event.getAttributeValue("owner")
-			order.status = event.getAttributeValue("status")
-			order.orderType = event.getAttributeValue("order_type");	
-			order.denomAsk = event.getAttributeValue("denom_ask");
-			order.denomBid = event.getAttributeValue("denom_bid");
 			order.amount = BigInt.fromString(event.getAttributeValue("amount"));
-			let rateString = event.getAttributeValue("rate");
-			let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-			let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-			order.rate = rateNumerator.div(rateDenominator)
-			order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
+			order.status = event.getAttributeValue("status");
 			order.updTime = BigInt.fromString(event.getAttributeValue("update-time"));
 			
 			order.save();
@@ -47,7 +51,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 					removeLiquidity(order)
 				}
 			}
-
+			
 			if (event.getAttributeValue("status") == "cancelled") {
 				if (event.getAttributeValue("limit")) {
 					removeLiquidity(order)
@@ -57,7 +61,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 	})
 }
 
-function updateBook(order: Order, direction: string) {
+function updateBook(order: Order, direction: string): void {
 	let base = order.denomBid
 	let quote = order.denomAsk
 	
@@ -66,10 +70,12 @@ function updateBook(order: Order, direction: string) {
 		quote = order.denomBid
 	}
 	
+	
+
 	let orderBookId = join([base, quote, direction])
 	
 	let book = OrderBook.load(orderBookId)
-			
+
 	if (book == null) {
 		book = new OrderBook(orderBookId)
 		book.base = base
@@ -78,65 +84,62 @@ function updateBook(order: Order, direction: string) {
 		book.total = BigInt.zero()
 		book.bins = []
 		book.orders = []
-
+		
 		if (direction == "sell") {
-			book.rate = order.rate
 			book.ceiling = placeCeiling(order.rate)
 		} else {
-			book.rate = BigDecimal.fromString("1").div(order.rate)
-			orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+			book.ceiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
 		}
 	}
-
+	
 	var orderCeiling: BigDecimal
 
 	if (direction == "sell") {
-		orderCeiling = placeCeiling(order.rate)
 		book.rate = order.rate
+		orderCeiling = placeCeiling(order.rate)
 	} else {
-		orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
 		book.rate = BigDecimal.fromString("1").div(order.rate)
+		orderCeiling = placeCeiling(book.rate)
 	}
 
 	if (book.ceiling == orderCeiling) return
+	
+	// Before we move book.ceiling, calculate bookPlace
+	// These will be used to re-org book bins
+	let bookPlace = book.ceiling.div(BigDecimal.fromString("10"))
+	let orderPlace = orderCeiling.div(BigDecimal.fromString("10"))
 
 	// Book offset is the number of orders of magnitude to move
 	// the order books based on the current market order price
 	let bookOffset = 0
-
+	
 	if (orderCeiling.gt(book.ceiling)) {
-		while (book.ceiling.lt(orderCeiling)) {
+		while (orderCeiling.gt(book.ceiling)) {
 			bookOffset++
 			book.ceiling = book.ceiling.times(BigDecimal.fromString("10"))
 		}
 	}
 
 	if (orderCeiling.lt(book.ceiling)) {
-		while (book.ceiling.gt(orderCeiling)) {
+		while (orderCeiling.lt(book.ceiling)) {
 			bookOffset--
 			book.ceiling = book.ceiling.div(BigDecimal.fromString("10"))
 		}
 	}
-
+	
 	var binId: string
 	var bin: BookBin | null
-	let orderPlace = orderCeiling.div(BigDecimal.fromString("10"))
-	let bookPlace = book.ceiling.div(BigDecimal.fromString("10"))
-
+	
+	
 	// If bookOffset less than zero, then add bins below
 	if (bookOffset < 0) {
 		orderPlace = orderPlace.div(BigDecimal.fromString("10000"))
 		bookPlace = bookPlace.div(BigDecimal.fromString("10000"))
 	}
-
-	var sigPrice: number
-	var incrementId: string
+	
+	
 	var stalePlace: string
-	var orderExisting: Order | null
-	var orderExistingPlace: BigDecimal
-	var orderOffset: number
-	var increment: BookIncrement | null
-
+	
 	while (bookOffset != 0) {
 		if (bookOffset < 0) {
 			// Remove bin from top
@@ -176,30 +179,40 @@ function updateBook(order: Order, direction: string) {
 
 		// Add new bin to Order Book entity
 		book.bins.push(binId)
+		
+		var sigPrice: number
+		var incrementId: string
+		var orderId: string
+		var orderExisting: Order | null
+		var orderExistingPlace: BigDecimal
+		var orderOffset: number
+		var increment: BookIncrement | null
 
-		book.orders.forEach(orderId => {
+		for (let i = 0, k = book.orders.length; i < k; ++i) {
+			orderId = book.orders[i]
 			orderExisting = Order.load(orderId)
+			orderOffset = 0
+			
 			// All orders should not be null, but need this because
 			// load function may return null
 			if (orderExisting != null) {
 				
 				orderExistingPlace = placeCeiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
-
-				if (orderExistingPlace.gt(bookPlace)) {
-					while (orderExistingPlace.gt(bookPlace)) {
-						orderOffset++
-						orderExistingPlace.div(BigDecimal.fromString("10"))
-					}
+				
+				while (orderExistingPlace.gt(bookPlace)) {
+					orderOffset++
+					orderExistingPlace = orderExistingPlace.div(BigDecimal.fromString("10"))
 				}
-			
+				
+				
 				if (orderExistingPlace.lt(bookPlace)) {
-					while (orderExistingPlace.gt(bookPlace)) {
+					while (orderExistingPlace.lt(bookPlace)) {
 						orderOffset--
-						orderExistingPlace.times(BigDecimal.fromString("10"))
+						orderExistingPlace = orderExistingPlace.times(BigDecimal.fromString("10"))
 					}
 				}
 				
-				if (bookPlace.gt(orderExistingPlace)) {
+				if (orderOffset < 0) {
 					sigPrice = parseFloat(bookPlace.toString())
 				} else {
 					sigPrice = sigFigs(parseFloat(order.rate.toString()), 1+orderOffset)
@@ -210,18 +223,26 @@ function updateBook(order: Order, direction: string) {
 				
 				if (increment == null) {
 					increment = new BookIncrement(incrementId)
+					increment.place = bookPlace.toString()
 					increment.amount = BigInt.zero()
 					increment.orders = []
 				}
 		
 				increment.amount = increment.amount.plus(order.amount)
 				increment.orders.push(order.id)
+				
 				if (bin != null) {
 					bin.book.push(increment.id)
 				}
+
+				increment.save()
+				
 			}
-		})
+			
+		}
+		
 		bin.save()
+		
 		if (bookOffset < 0) {
 			bookOffset++
 		} else {
@@ -237,9 +258,7 @@ function addLiquidity(order: Order): void {
 	addOrder(order, "buy")
 }
 
-
-
-function addOrder(order: Order, direction: string) {
+function addOrder(order: Order, direction: string): void {
 	let base = order.denomBid
 	let quote = order.denomAsk
 	
@@ -258,15 +277,16 @@ function addOrder(order: Order, direction: string) {
 		book.quote = quote
 		book.direction = direction
 		book.total = BigInt.zero()
+		book.bins = []
+		book.orders = []
+
 		if (direction == "sell") {
 			book.rate = order.rate
+			book.ceiling = placeCeiling(order.rate)
 		} else {
 			book.rate = BigDecimal.fromString("1").div(order.rate)
+			book.ceiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
 		}
-		
-		book.ceiling = placeCeiling(book.rate)
-		book.orders = []
-		book.bins = []
 	}
 
 	book.total = book.total.plus(order.amount)
@@ -276,6 +296,7 @@ function addOrder(order: Order, direction: string) {
 	var bin: BookBin | null
 	let offset = 0
 	var orderCeiling: BigDecimal
+	
 	if (direction == "sell") {
 		orderCeiling = placeCeiling(order.rate)
 	} else {
@@ -309,6 +330,7 @@ function addOrder(order: Order, direction: string) {
 
 		if (bin == null) {
 			bin = new BookBin(binId)
+			bin.book = []
 			book.bins.push(binId)
 		}
 
@@ -323,7 +345,9 @@ function addOrder(order: Order, direction: string) {
 		
 		if (incrementEntity == null) {
 			incrementEntity = new BookIncrement(incrementId)
+			incrementEntity.place = place.toString()
 			incrementEntity.amount = BigInt.zero()
+			incrementEntity.orders = []
 		}
 
 		incrementEntity.amount = incrementEntity.amount.plus(order.amount)
@@ -346,7 +370,7 @@ function removeLiquidity(order: Order): void {
 	subOrder(order, "buy")
 }
 
-function subOrder(order: Order, direction: string) {
+function subOrder(order: Order, direction: string): void {
 	let base = order.denomBid
 	let quote = order.denomAsk
 	
@@ -393,7 +417,7 @@ function subOrder(order: Order, direction: string) {
 
 		var sigPrice: number
 		var incrementId: string
-		var incrementEntity: BookIncrement | null
+		var increment: BookIncrement | null
 	
 		for (let i = 1; i < 6; i++) {
 			
@@ -409,22 +433,24 @@ function subOrder(order: Order, direction: string) {
 				}
 				
 				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
-				incrementEntity = BookIncrement.load(incrementId)
+				increment = BookIncrement.load(incrementId)
 				
 				// Increment shouldn't be null but if it is skip
-				if (incrementEntity != null) {
-					incrementEntity.orders = removeId(incrementEntity.orders, order.id)
+				if (increment != null) {
+					increment.orders = removeId(increment.orders, order.id)
 
-					if (incrementEntity.orders.length == 0) {
+					if (increment.orders.length == 0) {
 						store.remove("BookIncrement", incrementId)
+						bin.book = removeId(bin.book, incrementId)
+						bin.save()
 					} else {
-						incrementEntity.amount = incrementEntity.amount.minus(order.amount)
-						incrementEntity.save()
+						increment.amount = increment.amount.minus(order.amount)
+						increment.save()
 					}
 				}
-
-				place = place.div(BigDecimal.fromString("10"))
 			}
+
+			place = place.div(BigDecimal.fromString("10"))
 		}
 	}
 }
@@ -435,13 +461,13 @@ function updateHistoricalFrame(order: Order, event: cosmos.Event): void {
   let frameTypes = FrameType.all()
   
 	for (let i = 0; i < frameTypes.length; i++) {
-      let frameType = frameTypes[i]
+    let frameType = frameTypes[i]
 			
-      // First Bid -> Base Ask -> Quote
-	let frame = new Frame(order.denomBid, order.denomAsk, timeStamp, frameType)
+    // First Bid -> Base Ask -> Quote
+		let frame = new Frame(order.denomBid, order.denomAsk, timeStamp, frameType)
 
-	let id = frame.getID();
-	let frameEntity = HistoricalFrame.load(id)
+		let id = frame.getID();
+		let frameEntity = HistoricalFrame.load(id)
 
 	if (frameEntity == null) {
 		frameEntity = new HistoricalFrame(id)
