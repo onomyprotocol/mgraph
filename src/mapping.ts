@@ -2,7 +2,7 @@ import { cosmos } from "@graphprotocol/graph-ts";
 import { Order, HistoricalFrame, BookBin, BookIncrement, OrderBook } from "../generated/schema";
 import {BigInt, BigDecimal, store} from "@graphprotocol/graph-ts";
 import {Frame, FrameType} from "./Frame";
-import {sigFigs, join, placeCeiling, removeId} from "./utils";
+import {sigFigs, join, ceiling, removeId, offset} from "./utils";
 
 export function handleTx(data: cosmos.TransactionData): void {
 	data.tx.result.events.forEach(event => {
@@ -29,11 +29,16 @@ export function handleTx(data: cosmos.TransactionData): void {
 				if (order.orderType == "limit") {
 					addLiquidity(order)
 				}
-				*/
-								
+				*/			
 				if (order.orderType == "market") {
-					updateBook(order, "sell")
-					updateBook(order, "buy")
+					updateBook(order, "sell", order.rate)
+					/*
+					rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+					rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+					let buyRate = rateNumerator.div(rateDenominator)
+				
+					updateBook(order, "buy", buyRate)
+					*/
 				}
 				
 			}
@@ -46,22 +51,25 @@ export function handleTx(data: cosmos.TransactionData): void {
 
 			if (event.getAttributeValue("status") == "filled") {
 				updateHistoricalFrame(order, event)
-				
+				/*
 				if (event.getAttributeValue("limit")) {
 					removeLiquidity(order)
 				}
+				*/
 			}
 			
 			if (event.getAttributeValue("status") == "cancelled") {
+				/*
 				if (event.getAttributeValue("limit")) {
 					removeLiquidity(order)
 				}
+				*/
 			}
 		}
 	})
 }
 
-function updateBook(order: Order, direction: string): void {
+function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 	let base = order.denomBid
 	let quote = order.denomAsk
 	
@@ -70,8 +78,6 @@ function updateBook(order: Order, direction: string): void {
 		quote = order.denomBid
 	}
 	
-	
-
 	let orderBookId = join([base, quote, direction])
 	
 	let book = OrderBook.load(orderBookId)
@@ -84,26 +90,17 @@ function updateBook(order: Order, direction: string): void {
 		book.total = BigInt.zero()
 		book.bins = []
 		book.orders = []
-		
-		if (direction == "sell") {
-			book.ceiling = placeCeiling(order.rate)
-		} else {
-			book.ceiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
-		}
+		book.ceiling = ceiling(order.rate)
 	}
 	
-	var orderCeiling: BigDecimal
+	book.rate = rate
+	let orderCeiling = ceiling(rate)
 
-	if (direction == "sell") {
-		book.rate = order.rate
-		orderCeiling = placeCeiling(order.rate)
-	} else {
-		book.rate = BigDecimal.fromString("1").div(order.rate)
-		orderCeiling = placeCeiling(book.rate)
+	if (book.ceiling == orderCeiling) {
+		book.save()
+		return
 	}
 
-	if (book.ceiling == orderCeiling) return
-	
 	// Before we move book.ceiling, calculate bookPlace
 	// These will be used to re-org book bins
 	let bookPlace = book.ceiling.div(BigDecimal.fromString("10"))
@@ -111,34 +108,12 @@ function updateBook(order: Order, direction: string): void {
 
 	// Book offset is the number of orders of magnitude to move
 	// the order books based on the current market order price
-	let bookOffset = 0
+	let bookOffset = offset(bookPlace, orderPlace)
 	
-	if (orderCeiling.gt(book.ceiling)) {
-		while (orderCeiling.gt(book.ceiling)) {
-			bookOffset++
-			book.ceiling = book.ceiling.times(BigDecimal.fromString("10"))
-		}
-	}
-
-	if (orderCeiling.lt(book.ceiling)) {
-		while (orderCeiling.lt(book.ceiling)) {
-			bookOffset--
-			book.ceiling = book.ceiling.div(BigDecimal.fromString("10"))
-		}
-	}
-	
+	/*
+	var stalePlace: string
 	var binId: string
 	var bin: BookBin | null
-	
-	
-	// If bookOffset less than zero, then add bins below
-	if (bookOffset < 0) {
-		orderPlace = orderPlace.div(BigDecimal.fromString("10000"))
-		bookPlace = bookPlace.div(BigDecimal.fromString("10000"))
-	}
-	
-	
-	var stalePlace: string
 	
 	while (bookOffset != 0) {
 		if (bookOffset < 0) {
@@ -197,7 +172,7 @@ function updateBook(order: Order, direction: string): void {
 			// load function may return null
 			if (orderExisting != null) {
 				
-				orderExistingPlace = placeCeiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
+				orderExistingPlace = ceiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
 				
 				while (orderExistingPlace.gt(bookPlace)) {
 					orderOffset++
@@ -250,6 +225,7 @@ function updateBook(order: Order, direction: string): void {
 		}
 	}
 	book.save()
+	*/
 }
 
 // Add liquidity to books
@@ -282,10 +258,10 @@ function addOrder(order: Order, direction: string): void {
 
 		if (direction == "sell") {
 			book.rate = order.rate
-			book.ceiling = placeCeiling(order.rate)
+			book.ceiling = ceiling(order.rate)
 		} else {
 			book.rate = BigDecimal.fromString("1").div(order.rate)
-			book.ceiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+			book.ceiling = ceiling(BigDecimal.fromString("1").div(order.rate))
 		}
 	}
 
@@ -298,9 +274,9 @@ function addOrder(order: Order, direction: string): void {
 	var orderCeiling: BigDecimal
 	
 	if (direction == "sell") {
-		orderCeiling = placeCeiling(order.rate)
+		orderCeiling = ceiling(order.rate)
 	} else {
-		orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+		orderCeiling = ceiling(BigDecimal.fromString("1").div(order.rate))
 	}
 	
 	if (orderCeiling.gt(book.ceiling)) {
@@ -394,9 +370,9 @@ function subOrder(order: Order, direction: string): void {
 		let offset = 0
 		var orderCeiling: BigDecimal
 		if (direction == "sell") {
-			orderCeiling = placeCeiling(order.rate)
+			orderCeiling = ceiling(order.rate)
 		} else {
-			orderCeiling = placeCeiling(BigDecimal.fromString("1").div(order.rate))
+			orderCeiling = ceiling(BigDecimal.fromString("1").div(order.rate))
 		}
 	
 		if (orderCeiling.gt(book.ceiling)) {
