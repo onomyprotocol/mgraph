@@ -31,14 +31,15 @@ export function handleTx(data: cosmos.TransactionData): void {
 				}
 				*/			
 				if (order.orderType == "market") {
-					updateBook(order, "sell", order.rate)
-					/*
+					updateBook(order.denomBid, order.denomAsk, "sell", order.rate)
+					updateBook(order.denomBid, order.denomAsk, "buy", order.rate)
+					
 					rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
 					rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-					let buyRate = rateNumerator.div(rateDenominator)
+					let inverseRate = rateNumerator.div(rateDenominator)
 				
-					updateBook(order, "buy", buyRate)
-					*/
+					updateBook(order.denomAsk, order.denomBid, "buy", inverseRate)
+					updateBook(order.denomAsk, order.denomBid, "sell", inverseRate)
 				}
 				
 			}
@@ -69,15 +70,8 @@ export function handleTx(data: cosmos.TransactionData): void {
 	})
 }
 
-function updateBook(order: Order, direction: string, rate: BigDecimal): void {
-	let base = order.denomBid
-	let quote = order.denomAsk
-	
-	if (direction = "buy") {
-		base = order.denomAsk
-		quote = order.denomBid
-	}
-	
+function updateBook(base: string, quote: string, direction: string, rate: BigDecimal): void {
+
 	let orderBookId = join([base, quote, direction])
 	
 	let book = OrderBook.load(orderBookId)
@@ -90,7 +84,7 @@ function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 		book.total = BigInt.zero()
 		book.bins = []
 		book.orders = []
-		book.ceiling = ceiling(order.rate)
+		book.ceiling = ceiling(rate)
 	}
 	
 	book.rate = rate
@@ -110,7 +104,7 @@ function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 	// the order books based on the current market order price
 	let bookOffset = offset(bookPlace, orderPlace)
 	
-	/*
+	
 	var stalePlace: string
 	var binId: string
 	var bin: BookBin | null
@@ -190,7 +184,7 @@ function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 				if (orderOffset < 0) {
 					sigPrice = parseFloat(bookPlace.toString())
 				} else {
-					sigPrice = sigFigs(parseFloat(order.rate.toString()), 1+orderOffset)
+					sigPrice = sigFigs(parseFloat(rate.toString()), 1+orderOffset)
 				}
 				
 				incrementId = join([base, quote, direction, bookPlace.toString(), sigPrice.toString()])
@@ -203,8 +197,8 @@ function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 					increment.orders = []
 				}
 		
-				increment.amount = increment.amount.plus(order.amount)
-				increment.orders.push(order.id)
+				increment.amount = increment.amount.plus(orderExisting.amount)
+				increment.orders.push(orderExisting.id)
 				
 				if (bin != null) {
 					bin.book.push(increment.id)
@@ -225,7 +219,7 @@ function updateBook(order: Order, direction: string, rate: BigDecimal): void {
 		}
 	}
 	book.save()
-	*/
+	
 }
 
 // Add liquidity to books
