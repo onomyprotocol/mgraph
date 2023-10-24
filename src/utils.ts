@@ -44,10 +44,13 @@ export function offset(rate1: BigDecimal, rate2: BigDecimal): number {
 	return (place2-place1)
 }
 
-export function removeId(arr: string[], value: string): string[] {
-	var index = arr.indexOf(value);
-	if (index > -1) {
-		arr.splice(index, 1);
+export function removeId(ids: string[], id: string): string[] {
+	var filteredIds: string[]
+	filteredIds = [];
+	for (let i= 0; i<ids.length; i++) {
+			if (ids[i] != id) {
+				filteredIds.push(ids[i]);
+			}
 	}
-	return arr;
+	return filteredIds
 }
