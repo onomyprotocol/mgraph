@@ -83,6 +83,15 @@ export function handleTx(data: cosmos.TransactionData): void {
 function updateBook(base: string, quote: string, direction: string, rate: BigDecimal): void {
 
 	var binId: string
+	var bin: BookBin | null
+	var orderId: string
+	var orderExisting: Order | null
+	var orderOffset: number
+	var orderExistingPlace: BigDecimal
+	var sigPrice: number
+	var incrementId: string
+	var increment: BookIncrement | null
+	var incrementOrders: string[]
 
 	let orderBookId = join([base, quote, direction])
 	
@@ -109,6 +118,12 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 		for (let i = 1; i < 6; i++) {
 			binId =  join([base, quote, direction, place.toString()])
 			bins.push(binId)
+
+			// Create bin
+			bin = new BookBin(binId)
+			bin.book = []
+			bin.save()
+			
 			place = place.div(BigDecimal.fromString("10"))
 		}
 
@@ -137,7 +152,6 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 	// the order books based on the current market order price
 	let bookOffset = offset(bookPlace, orderPlace)
 	
-	// var bin: BookBin | null
 	let newPlace = BigDecimal.zero()
 	var stalePlace: BigDecimal
 	
@@ -171,12 +185,70 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 			
 			// Remove stale bin from order-book bin array
 			bins = removeId(bins, binId);
+
+			// Load stale bin
+			bin = BookBin.load(binId)
+		
+			// Remove stale increments from storage
+			if (bin != null) {
+				bin.book.forEach(incrementId => {
+					store.remove("BookIncrement", incrementId)
+				});
+			}
+
+			// Remove BookBin
+			store.remove("BookBin", binId)
 			
 			// Create new bin based on current book decimal place
 			binId =  join([base, quote, direction, newPlace.toString()])
 
 			// Add new bin to Order Book entity
 			bins.push(binId)
+
+			bin = new BookBin(binId)
+			var binBook: string[]
+			binBook = []
+			bin.book = binBook
+			
+			
+			for (let i = 0, k = book.orders.length; i < k; ++i) {
+				orderId = book.orders[i]
+				orderExisting = Order.load(orderId)
+				orderOffset = 0
+				
+				if (orderExisting != null) {
+					orderExistingPlace = ceiling(orderExisting.rate).div(BigDecimal.fromString("10"))
+					orderOffset = offset(orderExistingPlace, newPlace)
+					
+					if (orderOffset < 0) {
+						sigPrice = parseFloat(newPlace.toString())
+					} else {
+						sigPrice = sigFigs(parseFloat(rate.toString()), 1+orderOffset)
+					}
+
+					incrementId = join([base, quote, direction, newPlace.toString(), sigPrice.toString()])
+					increment = BookIncrement.load(incrementId)
+					incrementOrders = []
+
+					if (increment == null) {
+						increment = new BookIncrement(incrementId)
+						increment.place = bookPlace.toString()
+						increment.amount = BigInt.zero()
+					} else {
+						incrementOrders = increment.orders
+					}
+			
+					increment.amount = increment.amount.plus(orderExisting.amount)
+					incrementOrders.push(orderExisting.id)
+					
+					binBook.push(increment.id)
+					
+					increment.orders = incrementOrders
+					increment.save()
+				}
+			}
+			
+			bin.save()
 
 			if (bookOffset < 0) {
 				bookOffset++
@@ -191,103 +263,6 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 	book.orders = orders
 	book.save()
 }
-	
-		
-
-		
-		// bin = BookBin.load(binId)
-		
-		
-
-		/*
-		// Remove stale increments from storage
-		if (bin != null) {
-			bin.book.forEach(incrementId => {
-				store.remove("BookIncrement", incrementId)
-			});
-		}
-
-		// Remove BookBin
-		store.remove("BookBin", binId)
-		*/
-		
-		
-		
-		// bin = new BookBin(binId)
-		// var binBook: string[]
-		// binBook = []
-		// bin.book = binBook
-
-		/*
-		var sigPrice: number
-		var incrementId: string
-		var orderId: string
-		var orderExisting: Order | null
-		var orderExistingPlace: BigDecimal
-		var orderOffset: number
-		var increment: BookIncrement | null
-		var incrementOrders: string[]
-		incrementOrders = []
-
-		for (let i = 0, k = book.orders.length; i < k; ++i) {
-			orderId = book.orders[i]
-			orderExisting = Order.load(orderId)
-			orderOffset = 0
-			
-			// All orders should not be null, but need this because
-			// load function may return null
-			if (orderExisting != null) {
-				
-				orderExistingPlace = ceiling(orderExisting.rate).div(BigDecimal.fromString("10")) 
-				
-				while (orderExistingPlace.gt(bookPlace)) {
-					orderOffset++
-					orderExistingPlace = orderExistingPlace.div(BigDecimal.fromString("10"))
-				}
-				
-				
-				if (orderExistingPlace.lt(bookPlace)) {
-					while (orderExistingPlace.lt(bookPlace)) {
-						orderOffset--
-						orderExistingPlace = orderExistingPlace.times(BigDecimal.fromString("10"))
-					}
-				}
-				
-				if (orderOffset < 0) {
-					sigPrice = parseFloat(bookPlace.toString())
-				} else {
-					sigPrice = sigFigs(parseFloat(rate.toString()), 1+orderOffset)
-				}
-				
-				incrementId = join([base, quote, direction, bookPlace.toString(), sigPrice.toString()])
-				increment = BookIncrement.load(incrementId)
-				
-				if (increment == null) {
-					increment = new BookIncrement(incrementId)
-					increment.place = bookPlace.toString()
-					increment.amount = BigInt.zero()
-					increment.orders = []
-				} else {
-					incrementOrders = increment.orders
-				}
-		
-				increment.amount = increment.amount.plus(orderExisting.amount)
-				incrementOrders.push(orderExisting.id)
-				
-				binBook.push(increment.id)
-				
-				increment.orders = incrementOrders
-				increment.save()
-				
-			}
-			
-		}
-		*/
-		// bin.book = binBook
-		// bin.save()
-		
-		
-
 
 function addOrder(id: string, amount: BigInt, base: string, quote: string, direction: string, rate: BigDecimal): void {
 	
