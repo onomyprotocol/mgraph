@@ -46,7 +46,7 @@ type BookIncrement @entity {
 
 type BookBin @entity {
   id: ID! 
-  book: [ID!]!
+  increments: [ID!]!
 }
 
 type OrderBook @entity {

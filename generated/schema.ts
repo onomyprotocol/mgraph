@@ -486,8 +486,8 @@ export class BookBin extends Entity {
     this.set("id", Value.fromString(value));
   }
 
-  get book(): Array<string> {
-    let value = this.get("book");
+  get increments(): Array<string> {
+    let value = this.get("increments");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
@@ -495,8 +495,8 @@ export class BookBin extends Entity {
     }
   }
 
-  set book(value: Array<string>) {
-    this.set("book", Value.fromStringArray(value));
+  set increments(value: Array<string>) {
+    this.set("increments", Value.fromStringArray(value));
   }
 }
 
