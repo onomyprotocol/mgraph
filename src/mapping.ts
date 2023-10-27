@@ -2,7 +2,7 @@ import { cosmos } from "@graphprotocol/graph-ts";
 import { Order, HistoricalFrame, BookBin, BookIncrement, OrderBook } from "../generated/schema";
 import {BigInt, BigDecimal, store} from "@graphprotocol/graph-ts";
 import {Frame, FrameType} from "./Frame";
-import {ceiling, join, offset, removeId, sigFigs, split} from "./utils";
+import {ceiling, join, offset, removeId, truncate, split} from "./utils";
 
 export function handleTx(data: cosmos.TransactionData): void {
 	data.tx.result.events.forEach(event => {
@@ -39,7 +39,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 					addOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
 					
 				}
-						
+				/*		
 				if (order.orderType == "market") {
 					updateBook(order.denomBid, order.denomAsk, "sell", order.rate)
 					updateBook(order.denomBid, order.denomAsk, "buy", order.rate)
@@ -51,7 +51,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 					updateBook(order.denomAsk, order.denomBid, "buy", inverseRate)
 					updateBook(order.denomAsk, order.denomBid, "sell", inverseRate)
 				}
-				
+				*/
 			}
 
 			order.amount = BigInt.fromString(event.getAttributeValue("amount"));
@@ -86,9 +86,7 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 	var bin: BookBin | null
 	var orderId: string
 	var orderExisting: Order | null
-	var orderOffset: number
-	var orderExistingPlace: BigDecimal
-	var sigPrice: number
+	var sigPrice: BigDecimal
 	var incrementId: string
 	var increment: BookIncrement | null
 	var incrementOrders: string[]
@@ -214,16 +212,13 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 			for (let i = 0, k = book.orders.length; i < k; ++i) {
 				orderId = book.orders[i]
 				orderExisting = Order.load(orderId)
-				orderOffset = 0
 				
 				if (orderExisting != null) {
-					orderExistingPlace = ceiling(orderExisting.rate).div(BigDecimal.fromString("10"))
-					orderOffset = offset(newPlace, orderExistingPlace)
 					
-					if (orderOffset < 0) {
-						sigPrice = parseFloat(newPlace.toString())
+					if (newPlace.gt(rate)) {
+						sigPrice = newPlace
 					} else {
-						sigPrice = sigFigs(parseFloat(rate.toString()), 1+orderOffset)
+						sigPrice = truncate(rate, newPlace)
 					}
 
 					incrementId = join([base, quote, direction, newPlace.toString(), sigPrice.toString()])
@@ -232,7 +227,7 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 
 					if (increment == null) {
 						increment = new BookIncrement(incrementId)
-						increment.place = bookPlace.toString()
+						increment.place = newPlace.toString()
 						increment.amount = BigInt.zero()
 					} else {
 						incrementOrders = increment.orders
@@ -329,13 +324,11 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 	var incrementOrders: string[]
 	
 	var place: BigDecimal
-	var sigPrice: number
-	var orderOffset: number
+	var sigPrice: BigDecimal
 	
 	for (let i = 0, k = book.bins.length; i < k; ++i) {
 		binId = book.bins[i]
 		place = BigDecimal.fromString(split(binId)[3])
-		orderOffset = offset(place, orderPlace)
 
 		bin = BookBin.load(binId)
 
@@ -347,9 +340,9 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 		increments = bin.increments
 
 		if (place.gt(rate)) {
-			sigPrice = parseFloat(place.toString())
+			sigPrice = place
 		} else {
-			sigPrice = sigFigs(parseFloat(rate.toString()), 1+orderOffset)
+			sigPrice = truncate(rate, place)
 		}
 		
 		incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
@@ -365,7 +358,7 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 		increment.amount = increment.amount.plus(amount)
 		
 		incrementOrders = increment.orders
-		incrementOrders.push(id)
+		incrementOrders.push(join([id, rate.toString()]))
 		increment.orders = incrementOrders
 
 		increment.save()
@@ -417,7 +410,7 @@ function subOrder(order: Order, direction: string): void {
 
 		let place = book.ceiling.div(BigDecimal.fromString("10"))
 
-		var sigPrice: number
+		var sigPrice: BigDecimal
 		var incrementId: string
 		var increment: BookIncrement | null
 	
@@ -429,9 +422,9 @@ function subOrder(order: Order, direction: string): void {
 			// Bin shouldn't be null but if it is
 			if (bin != null) {
 				if (place.gt(order.rate)) {
-					sigPrice = parseFloat(place.toString())
+					sigPrice = place
 				} else {
-					sigPrice = sigFigs(parseFloat(order.rate.toString()), i+orderOffset)
+					sigPrice = truncate(order.rate, place)
 				}
 				
 				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
