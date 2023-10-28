@@ -20,7 +20,7 @@ export function truncate(rate: BigDecimal, place: BigDecimal): BigDecimal {
 	let sliceExp = rate.exp.toI32() + difference
 	
 	let rounds = abs(sliceExp)
-  let sliceDec = BigDecimal.fromString(digitsSlice)
+  	let sliceDec = BigDecimal.fromString(digitsSlice)
 
 	for (let i = 0; i < rounds; i++) {
 		if (sliceExp > 0) {
