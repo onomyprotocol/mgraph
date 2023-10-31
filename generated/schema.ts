@@ -128,6 +128,19 @@ export class Order extends Entity {
     this.set("amount", Value.fromBigInt(value));
   }
 
+  get inverseAmount(): BigInt {
+    let value = this.get("inverseAmount");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigInt();
+    }
+  }
+
+  set inverseAmount(value: BigInt) {
+    this.set("inverseAmount", Value.fromBigInt(value));
+  }
+
   get rate(): BigDecimal {
     let value = this.get("rate");
     if (!value || value.kind == ValueKind.NULL) {
@@ -139,6 +152,19 @@ export class Order extends Entity {
 
   set rate(value: BigDecimal) {
     this.set("rate", Value.fromBigDecimal(value));
+  }
+
+  get inverseRate(): BigDecimal {
+    let value = this.get("inverseRate");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toBigDecimal();
+    }
+  }
+
+  set inverseRate(value: BigDecimal) {
+    this.set("inverseRate", Value.fromBigDecimal(value));
   }
 
   get begTime(): BigInt {
@@ -405,6 +431,32 @@ export class BookIncrement extends Entity {
 
   set id(value: string) {
     this.set("id", Value.fromString(value));
+  }
+
+  get book(): string {
+    let value = this.get("book");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set book(value: string) {
+    this.set("book", Value.fromString(value));
+  }
+
+  get bin(): string {
+    let value = this.get("bin");
+    if (!value || value.kind == ValueKind.NULL) {
+      throw new Error("Cannot return null for a required field.");
+    } else {
+      return value.toString();
+    }
+  }
+
+  set bin(value: string) {
+    this.set("bin", Value.fromString(value));
   }
 
   get place(): string {

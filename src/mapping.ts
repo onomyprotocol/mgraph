@@ -8,7 +8,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 	data.tx.result.events.forEach(event => {
 		if (event.eventType == "order") {
 			let order = Order.load(`${event.eventType}-${event.getAttributeValue("uid")}`)
-			
+			let rateString = event.getAttributeValue("rate");
 			// If order == null, then the indexer hasn't seen this order
 			// If it is a limit / stop order then we add liquidity to the indexed books
 			// If it is a market order, we adjust the book price and bins if needed
@@ -20,11 +20,22 @@ export function handleTx(data: cosmos.TransactionData): void {
 				order.denomAsk = event.getAttributeValue("denom_ask");
 				order.denomBid = event.getAttributeValue("denom_bid");
 				order.amount = BigInt.fromString(event.getAttributeValue("amount"));
-				let rateString = event.getAttributeValue("rate");
+				
 				let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
 				let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
 				order.rate = rateNumerator.div(rateDenominator)
+
+				rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+				rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+					
+				let inverseRate = rateNumerator.div(rateDenominator)
+				let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
+
+				order.inverseRate = inverseRate
+				order.inverseAmount = inverseAmount
+
 				order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
+				order.status = event.getAttributeValue("status");
 				
 				if (order.orderType == "limit") {
 					
@@ -41,6 +52,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 				}
 					
 				if (order.orderType == "market") {
+					
 					updateBook(order.denomBid, order.denomAsk, "sell", order.rate)
 					updateBook(order.denomBid, order.denomAsk, "buy", order.rate)
 					
@@ -50,28 +62,45 @@ export function handleTx(data: cosmos.TransactionData): void {
 				
 					updateBook(order.denomAsk, order.denomBid, "buy", inverseRate)
 					updateBook(order.denomAsk, order.denomBid, "sell", inverseRate)
+					
 				}
 			}
 
 			order.amount = BigInt.fromString(event.getAttributeValue("amount"));
-			order.status = event.getAttributeValue("status");
 			order.updTime = BigInt.fromString(event.getAttributeValue("update-time"));
-			
+			let prevStatus = order.status
+			order.status = event.getAttributeValue("status");
 			order.save();
+			
+			if (event.getAttributeValue("status") == "filled" && prevStatus != "filled") {
 
-			if (event.getAttributeValue("status") == "filled") {
 				updateHistoricalFrame(order, event)
-				
-				if (event.getAttributeValue("limit")) {
-					subOrder(order, "sell")
-					subOrder(order, "buy")
+
+				if (event.getAttributeValue("order_type") == "limit") {
+					subOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
+
+					let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+					let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+					
+					let inverseRate = rateNumerator.div(rateDenominator)
+					let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
+					
+
+					subOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
 				}
 			}
-			
-			if (event.getAttributeValue("status") == "cancelled") {
-				if (event.getAttributeValue("limit")) {
-					subOrder(order, "sell")
-					subOrder(order, "buy")
+
+			if (event.getAttributeValue("status") == "canceled" && prevStatus != "canceled") {
+				if (event.getAttributeValue("order_type") == "limit") {
+					subOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
+
+					let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
+					let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
+					
+					let inverseRate = rateNumerator.div(rateDenominator)
+					let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
+					
+					subOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
 				}
 			}
 		}
@@ -136,7 +165,7 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 
 	orders = book.orders
 	bins = book.bins
-
+	
 	// Before we move book.ceiling, calculate bookPlace
 	// These will be used to re-org book bins
 	let bookPlace = book.ceiling.div(BigDecimal.fromString("10"))
@@ -184,7 +213,7 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 			bin = BookBin.load(binId)
 			
 			var increments: string[]
-
+			
 			// Remove stale increments from storage
 			if (bin != null) {
 				for (let i = 0; i < bin.increments.length; ++i) {
@@ -210,24 +239,38 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 			bin.increments = increments
 			
 			if (book.orders.length > 0) {
+				var orderAmount: BigInt
+				var orderRate: BigDecimal
+				
+
 				for (let i = 0, k = book.orders.length; i < k; ++i) {
 					orderId = book.orders[i]
 					orderExisting = Order.load(orderId)
 					
 					if (orderExisting != null) {
-						
-						if (newPlace.gt(orderExisting.rate)) {
+						if (direction == "sell") {
+							orderAmount = orderExisting.amount
+							orderRate = orderExisting.rate 
+						}
+						else { 
+							orderAmount = orderExisting.inverseAmount
+							orderRate = orderExisting.inverseRate
+						}
+
+						if (newPlace.gt(orderRate)) {
 							sigPrice = newPlace
 						} else {
-							sigPrice = truncate(orderExisting.rate, newPlace)
+							sigPrice = truncate(orderRate, newPlace)
 						}
 	
 						incrementId = join([base, quote, direction, newPlace.toString(), sigPrice.toString()])
 						increment = BookIncrement.load(incrementId)
 						incrementOrders = []
-	
+						
 						if (increment == null) {
 							increment = new BookIncrement(incrementId)
+							increment.book = book.id
+							increment.bin = bin.id
 							increment.place = newPlace.toString()
 							increment.amount = BigInt.zero()
 							increments.push(increment.id)
@@ -235,9 +278,8 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 							incrementOrders = increment.orders
 						}
 				
-						increment.amount = increment.amount.plus(orderExisting.amount)
+						increment.amount = increment.amount.plus(orderAmount)
 						incrementOrders.push(orderExisting.id)
-						
 						increment.orders = incrementOrders
 						increment.save()
 					}
@@ -299,8 +341,8 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 			place = place.div(BigDecimal.fromString("10"))
 		}
 
+		bins
 		book.bins = bins
-		
 	}
 	
 	book.rate = rate
@@ -310,6 +352,7 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 
 	// Add order to orders temporary variable
 	orders.push(id)
+	orders = orders
 	book.orders = orders
 
 	// Done editing book
@@ -348,6 +391,8 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 		
 		if (increment == null) {
 			increment = new BookIncrement(incrementId)
+			increment.book = book.id
+			increment.bin = bin.id
 			increment.place = place.toString()
 			increment.amount = BigInt.zero()
 			increment.orders = []
@@ -358,23 +403,18 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 		
 		incrementOrders = increment.orders
 		incrementOrders.push(id)
+		incrementOrders = incrementOrders
 		increment.orders = incrementOrders
 
 		increment.save()
 		
+		increments = increments
 		bin.increments = increments
 		bin.save()
 	}
 }
 
-function subOrder(order: Order, direction: string): void {
-	let base = order.denomBid
-	let quote = order.denomAsk
-	
-	if (direction = "buy") {
-		base = order.denomAsk
-		quote = order.denomBid
-	}
+function subOrder(id: string, amount: BigInt, base: string, quote: string, direction: string, rate: BigDecimal): void {
 	
 	let orderBookId = join([base, quote, direction])
 	
@@ -382,8 +422,8 @@ function subOrder(order: Order, direction: string): void {
 	
 	// Book shouldn't be null ever, but if it is lets skip
 	if (book != null) {
-		book.total = book.total.minus(order.amount)
-		book.orders = removeId(book.orders, order.id)
+		book.total = book.total.minus(amount)
+		book.orders = removeId(book.orders, id)
 		book.save()
 
 		var binId: string
@@ -402,21 +442,22 @@ function subOrder(order: Order, direction: string): void {
 			place = BigDecimal.fromString(binId.split("-")[3])
 			bin = BookBin.load(binId)
 
-			// Bin shouldn't be null but if it is
 			if (bin != null) {
-				if (place.gt(order.rate)) {
+				if (place.gt(rate)) {
 					sigPrice = place
 				} else {
-					sigPrice = truncate(order.rate, place)
+					sigPrice = truncate(rate, place)
 				}
 				
 				incrementId = join([base, quote, direction, place.toString(), sigPrice.toString()])
 				increment = BookIncrement.load(incrementId)
 				
+				if (increment === null) { throw new Error('Missing Increment: ' + incrementId + ' Order: ' + id + ' Bin Increments: ' + join(bin.increments)); }
+				
 				// Increment shouldn't be null but if it is skip
 				if (increment != null) {
 					orders = increment.orders
-					orders = removeId(orders, order.id)
+					orders = removeId(orders, id)
 
 					if (orders.length == 0) {
 						increment.orders = []
@@ -426,11 +467,15 @@ function subOrder(order: Order, direction: string): void {
 						
 						increments = bin.increments
 						increments = removeId(increments, incrementId)
+						increments
 						bin.increments = increments
 						bin.save()
 					} else {
 						increment.orders = orders
-						increment.amount = increment.amount.minus(order.amount)
+						increment.amount = increment.amount.minus(amount)
+						if (increment.amount.lt(BigInt.zero())) {
+							throw new Error("increment negative: " + incrementId + " amount: " + increment.amount.toString())
+						}
 						increment.save()
 					}
 				}

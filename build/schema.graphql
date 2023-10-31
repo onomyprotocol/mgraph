@@ -6,7 +6,9 @@ type Order @entity {
 	denomAsk: String! 
   denomBid: String!
   amount: BigInt!
+  inverseAmount: BigInt!
 	rate: BigDecimal!
+  inverseRate: BigDecimal!
 	begTime: BigInt!
 	updTime: BigInt!
 }
@@ -39,6 +41,8 @@ type HistoricalFrame @entity {
 
 type BookIncrement @entity {
   id: ID!
+	book: String!
+	bin: String!
 	place: String!
   amount: BigInt!
   orders: [ID!]!
