@@ -43,7 +43,7 @@ type BookIncrement @entity {
   id: ID!
 	book: String!
 	bin: String!
-	place: String!
+	place: BigDecimal!
   amount: BigInt!
   orders: [ID!]!
 }

@@ -459,17 +459,17 @@ export class BookIncrement extends Entity {
     this.set("bin", Value.fromString(value));
   }
 
-  get place(): string {
+  get place(): BigDecimal {
     let value = this.get("place");
     if (!value || value.kind == ValueKind.NULL) {
       throw new Error("Cannot return null for a required field.");
     } else {
-      return value.toString();
+      return value.toBigDecimal();
     }
   }
 
-  set place(value: string) {
-    this.set("place", Value.fromString(value));
+  set place(value: BigDecimal) {
+    this.set("place", Value.fromBigDecimal(value));
   }
 
   get amount(): BigInt {

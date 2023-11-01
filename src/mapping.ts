@@ -270,8 +270,8 @@ function updateBook(base: string, quote: string, direction: string, rate: BigDec
 						if (increment == null) {
 							increment = new BookIncrement(incrementId)
 							increment.book = book.id
-							increment.bin = bin.id
-							increment.place = newPlace.toString()
+							increment.bin = newPlace.toString()
+							increment.place = sigPrice
 							increment.amount = BigInt.zero()
 							increments.push(increment.id)
 						} else {
@@ -392,8 +392,8 @@ function addOrder(id: string, amount: BigInt, base: string, quote: string, direc
 		if (increment == null) {
 			increment = new BookIncrement(incrementId)
 			increment.book = book.id
-			increment.bin = bin.id
-			increment.place = place.toString()
+			increment.bin = place.toString()
+			increment.place = sigPrice
 			increment.amount = BigInt.zero()
 			increment.orders = []
 			increments.push(increment.id)
