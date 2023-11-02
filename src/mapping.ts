@@ -29,7 +29,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 				rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
 					
 				let inverseRate = rateNumerator.div(rateDenominator)
-				let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
+				let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[0]))).div(BigInt.fromString(rateString.split(",")[1]))
 
 				order.inverseRate = inverseRate
 				order.inverseAmount = inverseAmount
@@ -37,32 +37,16 @@ export function handleTx(data: cosmos.TransactionData): void {
 				order.begTime = BigInt.fromString(event.getAttributeValue("begin-time"));
 				order.status = event.getAttributeValue("status");
 				
-				if (order.orderType == "limit") {
-					
+				if (order.orderType == "limit" && order.status != "filled") {
 					addOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
-					
-					rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-					rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-					
-					let inverseRate = rateNumerator.div(rateDenominator)
-					let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
-					
-					addOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
-					
+					addOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", order.inverseRate)
 				}
 					
 				if (order.orderType == "market") {
-					
 					updateBook(order.denomBid, order.denomAsk, "sell", order.rate)
 					updateBook(order.denomBid, order.denomAsk, "buy", order.rate)
-					
-					rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-					rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-					let inverseRate = rateNumerator.div(rateDenominator)
-				
-					updateBook(order.denomAsk, order.denomBid, "buy", inverseRate)
-					updateBook(order.denomAsk, order.denomBid, "sell", inverseRate)
-					
+					updateBook(order.denomAsk, order.denomBid, "buy", order.inverseRate)
+					updateBook(order.denomAsk, order.denomBid, "sell", order.inverseRate)
 				}
 			}
 
@@ -72,35 +56,19 @@ export function handleTx(data: cosmos.TransactionData): void {
 			order.status = event.getAttributeValue("status");
 			order.save();
 			
-			if (event.getAttributeValue("status") == "filled" && prevStatus != "filled") {
-
+			if (order.status == "filled" && prevStatus != "filled") {
 				updateHistoricalFrame(order, event)
 
 				if (event.getAttributeValue("order_type") == "limit") {
 					subOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
-
-					let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-					let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-					
-					let inverseRate = rateNumerator.div(rateDenominator)
-					let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
-					
-
-					subOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
+					subOrder(order.id, order.inverseAmount, order.denomAsk, order.denomBid, "buy", order.inverseRate)
 				}
 			}
 
-			if (event.getAttributeValue("status") == "canceled" && prevStatus != "canceled") {
+			if (order.status == "canceled" && prevStatus != "canceled") {
 				if (event.getAttributeValue("order_type") == "limit") {
 					subOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
-
-					let rateNumerator = new BigDecimal(BigInt.fromString(rateString.split(",")[1]))
-					let rateDenominator = new BigDecimal(BigInt.fromString(rateString.split(",")[0]))
-					
-					let inverseRate = rateNumerator.div(rateDenominator)
-					let inverseAmount = (order.amount.times(BigInt.fromString(rateString.split(",")[1]))).div(BigInt.fromString(rateString.split(",")[0]))
-					
-					subOrder(order.id, inverseAmount, order.denomAsk, order.denomBid, "buy", inverseRate)
+					subOrder(order.id, order.inverseAmount, order.denomAsk, order.denomBid, "buy", order.inverseRate)
 				}
 			}
 		}
