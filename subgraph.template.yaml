@@ -1,10 +1,11 @@
 specVersion: 0.0.5
+description: Onex graph
 schema:
   file: ./schema.graphql
 dataSources:
   - kind: cosmos
-    name: Market
-    network: market
+    name: {{ name }}
+    network: {{ network }}
     source:
       startBlock: 1
     mapping:
