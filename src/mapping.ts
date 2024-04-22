@@ -9,10 +9,12 @@ export function handleTx(data: cosmos.TransactionData): void {
 		if (event.eventType == "order") {
 			let order = Order.load(`${event.eventType}-${event.getAttributeValue("uid")}`)
 			let rateString = event.getAttributeValue("rate");
+			let prevStatus = 'unknown';
 			// If order == null, then the indexer hasn't seen this order
 			// If it is a limit / stop order then we add liquidity to the indexed books
 			// If it is a market order, we adjust the book price and bins if needed
 			if (order == null) {
+				prevStatus = 'non-existant';
 				order = new Order(`${event.eventType}-${event.getAttributeValue("uid")}`);
 				
 				order.owner = event.getAttributeValue("owner")
@@ -48,11 +50,12 @@ export function handleTx(data: cosmos.TransactionData): void {
 					updateBook(order.denomAsk, order.denomBid, "buy", order.inverseRate)
 					updateBook(order.denomAsk, order.denomBid, "sell", order.inverseRate)
 				}
+			} else {
+				prevStatus = order.status;
 			}
 
 			order.amount = BigInt.fromString(event.getAttributeValue("amount"));
 			order.updTime = BigInt.fromString(event.getAttributeValue("update-time"));
-			let prevStatus = order.status
 			order.status = event.getAttributeValue("status");
 			order.save();
 			
@@ -65,7 +68,7 @@ export function handleTx(data: cosmos.TransactionData): void {
 				}
 			}
 
-			if (order.status == "canceled" && prevStatus != "canceled") {
+			if (order.status == "canceled" && prevStatus != "canceled" && prevStatus != 'non-existant') {
 				if (event.getAttributeValue("order_type") == "limit") {
 					subOrder(order.id, order.amount, order.denomBid, order.denomAsk, "sell", order.rate)
 					subOrder(order.id, order.inverseAmount, order.denomAsk, order.denomBid, "buy", order.inverseRate)
