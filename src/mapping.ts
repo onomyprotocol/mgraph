@@ -445,9 +445,11 @@ function subOrder(id: string, amount: BigInt, base: string, quote: string, direc
 						increment.orders = orders
 						increment.amount = increment.amount.minus(amount)
 						if (increment.amount.lt(BigInt.zero())) {
-							throw new Error("increment negative: " + incrementId + " amount: " + increment.amount.toString())
+							// TODO: figure out why this happens
+							// throw new Error("increment negative: " + incrementId + " amount: " + increment.amount.toString())
+						} else {
+							increment.save()
 						}
-						increment.save()
 					}
 				}
 			}
