@@ -443,11 +443,14 @@ function subOrder(id: string, amount: BigInt, base: string, quote: string, direc
 						bin.save()
 					} else {
 						increment.orders = orders
-						increment.amount = increment.amount.minus(amount)
-						if (increment.amount.lt(BigInt.zero())) {
-							// TODO: figure out why this happens
-							// throw new Error("increment negative: " + incrementId + " amount: " + increment.amount.toString())
+
+						// There may arise situations where div rounding error in inverseAmount calcs causes amount to be greater than increment amount
+						// In this case set increment.amount to zero versus negative and save
+						if (increment.amount.lt(amount)) {
+							increment.amount = BigInt.zero()
+							increment.save()
 						} else {
+							increment.amount = increment.amount.minus(amount)
 							increment.save()
 						}
 					}
